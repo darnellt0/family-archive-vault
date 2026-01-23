@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload Photos & Videos - Family Archive</title>
+    <link href="https://releases.transloadit.com/uppy/v3.3.1/uppy.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .header {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 5px;
+            font-size: 1.8em;
+        }
+        .contributor {
+            color: #764ba2;
+            font-size: 1.1em;
+            font-weight: 600;
+        }
+        .upload-section {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            color: #555;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        input, textarea, select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+            font-family: inherit;
+        }
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+        .uppy-container {
+            margin: 20px 0;
+        }
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 10px;
+        }
+        .btn:hover {
+            opacity: 0.9;
+        }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .voice-note {
+            background: #f7f9fc;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+            border: 2px dashed #667eea;
+        }
+        .voice-note h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+        .record-btn {
+            background: #e74c3c;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 1em;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        .record-btn.recording {
+            background: #c0392b;
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        .status {
+            background: #f7f9fc;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            display: none;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Upload Your Memories</h1>
+            <p class="contributor">Uploading as: {{ contributor_name }}</p>
+        </div>
+
+        <div class="upload-section">
+            <div class="form-group">
+                <label for="decade">Approximate Decade (Optional)</label>
+                <select id="decade">
+                    <option value="">Unknown</option>
+                    <option value="1940">1940s</option>
+                    <option value="1950">1950s</option>
+                    <option value="1960">1960s</option>
+                    <option value="1970">1970s</option>
+                    <option value="1980">1980s</option>
+                    <option value="1990">1990s</option>
+                    <option value="2000">2000s</option>
+                    <option value="2010">2010s</option>
+                    <option value="2020">2020s</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="event">Event Name (Optional)</label>
+                <input type="text" id="event" placeholder="e.g., Christmas 1985, Summer Vacation">
+            </div>
+
+            <div class="form-group">
+                <label for="notes">Notes (Optional)</label>
+                <textarea id="notes" placeholder="Any context or stories you want to share..."></textarea>
+            </div>
+
+            <div class="uppy-container">
+                <div id="uppy"></div>
+            </div>
+
+            <div class="voice-note">
+                <h3>📝 Add a Voice Note (Optional)</h3>
+                <p style="color: #666; margin-bottom: 10px;">Record yourself telling stories about these photos</p>
+                <button id="recordBtn" class="record-btn">🎤 Start Recording</button>
+                <button id="stopBtn" class="record-btn" style="display:none; background:#27ae60;">⏹ Stop</button>
+                <span id="recordTime" style="margin-left: 10px; color: #666;"></span>
+            </div>
+
+            <button id="finishBtn" class="btn" disabled>Complete Upload</button>
+
+            <div id="status" class="status"></div>
+        </div>
+    </div>
+
+    <script src="https://releases.transloadit.com/uppy/v3.3.1/uppy.min.js"></script>
+    <script>
+        const TOKEN = "{{ token }}";
+        let batchId = `batch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        let uploadedFiles = [];
+        let voiceNoteFileId = null;
+        let mediaRecorder = null;
+        let audioChunks = [];
+
+        // Initialize Uppy
+        const uppy = new Uppy.Uppy({
+            autoProceed: false,
+            restrictions: {
+                maxFileSize: {{ settings.upload_max_size_mb }} * 1024 * 1024,
+                allowedFileTypes: ['image/*', 'video/*']
+            }
+        })
+        .use(Uppy.Dashboard, {
+            inline: true,
+            target: '#uppy',
+            height: 400,
+            proudlyDisplayPoweredByUppy: false,
+            note: 'Photos and videos up to {{ settings.upload_max_size_mb }}MB'
+        })
+        .use(Uppy.XHRUpload, {
+            endpoint: '/api/upload/chunk',
+            formData: true,
+            fieldName: 'chunk',
+            bundle: false
+        });
+
+        // Custom upload handler for chunked uploads
+        uppy.on('file-added', (file) => {
+            console.log('File added:', file.name);
+        });
+
+        uppy.on('upload', async () => {
+            console.log('Starting upload...');
+        });
+
+        uppy.on('upload-success', async (file, response) => {
+            console.log('File uploaded:', file.name);
+
+            // Initialize upload session
+            const initResponse = await fetch('/api/upload/init', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    token: TOKEN,
+                    filename: file.name,
+                    file_size: file.size,
+                    mime_type: file.type,
+                    batch_id: batchId
+                })
+            });
+            const initData = await initResponse.json();
+            const sessionId = initData.session_id;
+
+            // Upload in chunks
+            const chunkSize = initData.chunk_size;
+            const totalChunks = Math.ceil(file.size / chunkSize);
+
+            for (let i = 0; i < totalChunks; i++) {
+                const start = i * chunkSize;
+                const end = Math.min(start + chunkSize, file.size);
+                const chunk = file.data.slice(start, end);
+
+                const formData = new FormData();
+                formData.append('session_id', sessionId);
+                formData.append('chunk_index', i);
+                formData.append('total_chunks', totalChunks);
+                formData.append('chunk', chunk);
+
+                await fetch('/api/upload/chunk', {
+                    method: 'POST',
+                    body: formData
+                });
+            }
+
+            // Finish upload
+            const finishResponse = await fetch('/api/upload/finish', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    session_id: sessionId,
+                    batch_id: batchId
+                })
+            });
+            const finishData = await finishResponse.json();
+
+            uploadedFiles.push({
+                drive_file_id: finishData.drive_file_id,
+                filename: file.name,
+                mime_type: file.type,
+                size: file.size
+            });
+
+            document.getElementById('finishBtn').disabled = false;
+        });
+
+        // Voice recording
+        document.getElementById('recordBtn').addEventListener('click', async () => {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = [];
+
+            mediaRecorder.ondataavailable = (event) => {
+                audioChunks.push(event.data);
+            };
+
+            mediaRecorder.onstop = async () => {
+                const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+
+                // Upload voice note
+                const formData = new FormData();
+                formData.append('audio', audioBlob, 'voice_note.webm');
+
+                // TODO: Upload voice note to Drive
+
+                document.getElementById('recordTime').textContent = 'Voice note recorded ✓';
+            };
+
+            mediaRecorder.start();
+            document.getElementById('recordBtn').style.display = 'none';
+            document.getElementById('stopBtn').style.display = 'inline-block';
+
+            let seconds = 0;
+            const timer = setInterval(() => {
+                seconds++;
+                document.getElementById('recordTime').textContent = `Recording: ${seconds}s`;
+            }, 1000);
+
+            document.getElementById('stopBtn').addEventListener('click', () => {
+                mediaRecorder.stop();
+                clearInterval(timer);
+                document.getElementById('stopBtn').style.display = 'none';
+                stream.getTracks().forEach(track => track.stop());
+            }, { once: true });
+        });
+
+        // Finish and save manifest
+        document.getElementById('finishBtn').addEventListener('click', async () => {
+            const decade = document.getElementById('decade').value;
+            const event = document.getElementById('event').value;
+            const notes = document.getElementById('notes').value;
+
+            try {
+                const response = await fetch('/api/manifest/save', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        token: TOKEN,
+                        batch_id: batchId,
+                        decade: decade ? parseInt(decade) : null,
+                        event_name: event || null,
+                        notes: notes || null,
+                        voice_note_file_id: voiceNoteFileId,
+                        uploaded_files: uploadedFiles
+                    })
+                });
+
+                if (response.ok) {
+                    const status = document.getElementById('status');
+                    status.className = 'status success';
+                    status.textContent = `✓ Upload complete! ${uploadedFiles.length} files saved to the family archive.`;
+
+                    // Reset form
+                    setTimeout(() => {
+                        location.reload();
+                    }, 3000);
+                } else {
+                    throw new Error('Failed to save manifest');
+                }
+            } catch (error) {
+                const status = document.getElementById('status');
+                status.className = 'status error';
+                status.textContent = '✗ Error completing upload: ' + error.message;
+            }
+        });
+    </script>
+</body>
+</html>
