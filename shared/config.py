@@ -18,7 +18,8 @@ class Settings(BaseSettings):
 
     # Google Drive
     drive_root_folder_id: str
-    service_account_json_path: str
+    # Path to service account JSON file (optional if SERVICE_ACCOUNT_JSON env var is set)
+    service_account_json_path: Optional[str] = None
 
     # Local Storage
     local_root: str = Field(default="F:\\FamilyArchive")

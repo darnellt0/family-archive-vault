@@ -1,8 +1,9 @@
 """Google Drive client for Family Archive Vault."""
 import io
 import json
+import os
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload, MediaFileUpload
@@ -40,13 +41,43 @@ class DriveClient:
         }
     }
 
-    def __init__(self, service_account_path: str, root_folder_id: str):
-        """Initialize Drive client."""
+    def __init__(self, service_account_path: Optional[str], root_folder_id: str):
+        """Initialize Drive client.
+
+        Supports two modes:
+        1. File path: Pass a path to service account JSON file
+        2. Environment variable: Set SERVICE_ACCOUNT_JSON env var with JSON content
+           (path can be None or empty in this case)
+        """
         self.root_folder_id = root_folder_id
-        credentials = service_account.Credentials.from_service_account_file(
-            service_account_path,
-            scopes=['https://www.googleapis.com/auth/drive']
-        )
+
+        # Try environment variable first (for cloud deployments)
+        service_account_json = os.environ.get('SERVICE_ACCOUNT_JSON', '').strip()
+
+        if service_account_json:
+            # Load from environment variable (JSON content)
+            try:
+                info = json.loads(service_account_json)
+                credentials = service_account.Credentials.from_service_account_info(
+                    info,
+                    scopes=['https://www.googleapis.com/auth/drive']
+                )
+                logger.info("Loaded credentials from SERVICE_ACCOUNT_JSON environment variable")
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Invalid JSON in SERVICE_ACCOUNT_JSON env var: {e}")
+        elif service_account_path:
+            # Load from file path
+            credentials = service_account.Credentials.from_service_account_file(
+                service_account_path,
+                scopes=['https://www.googleapis.com/auth/drive']
+            )
+            logger.info(f"Loaded credentials from file: {service_account_path}")
+        else:
+            raise ValueError(
+                "No credentials provided. Set SERVICE_ACCOUNT_JSON env var with JSON content, "
+                "or set SERVICE_ACCOUNT_JSON_PATH to a file path."
+            )
+
         self.service = build('drive', 'v3', credentials=credentials)
         self.folder_cache: Dict[str, str] = {}
 
