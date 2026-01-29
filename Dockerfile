@@ -1,5 +1,5 @@
 # Dockerfile for intake web app
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 
@@ -31,7 +31,8 @@ RUN pip install --no-cache-dir \
     google-auth-httplib2==0.2.0 \
     google-api-python-client==2.116.0 \
     python-dotenv==1.0.1 \
-    loguru==0.7.2
+    loguru==0.7.2 \
+    jinja2==3.1.3
 
 # Copy application code
 COPY shared/ /app/shared/
