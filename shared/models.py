@@ -17,6 +17,13 @@ class AssetStatus(str, Enum):
     ERROR = "error"
 
 
+class SyncSource(str, Enum):
+    """Source of the asset."""
+    DRIVE_INBOX = "drive_inbox"
+    LOCAL_FOLDER = "local_folder"
+    WEB_UPLOAD = "web_upload"
+
+
 class AssetType(str, Enum):
     """Type of media asset."""
     IMAGE = "image"
@@ -74,11 +81,13 @@ class AssetSidecar(BaseModel):
     phash: Optional[str] = None  # For images only
 
     # Origin
-    drive_file_id: str
+    drive_file_id: Optional[str] = None
     original_filename: str
     contributor_token: str
     batch_id: str
     upload_timestamp: datetime
+    sync_source: SyncSource = SyncSource.DRIVE_INBOX
+    local_source_path: Optional[str] = None
 
     # Type & Format
     asset_type: AssetType

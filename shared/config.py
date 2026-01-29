@@ -65,6 +65,14 @@ class Settings(BaseSettings):
     rosetta_generation_time: str = "03:00"
     rosetta_timezone: str = "America/New_York"
 
+    # Local Folder Sync
+    enable_local_folder_sync: bool = False
+    local_sync_folder: Optional[str] = None
+    local_sync_poll_interval_seconds: int = 60
+    local_sync_batch_size: int = 50
+    local_folder_contributor_token: str = "local_uploads"
+    local_sync_delete_after_import: bool = False
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         # Auto-populate derived paths if not set
@@ -97,9 +105,15 @@ class Settings(BaseSettings):
             os.path.join(self.local_cache, "thumbnails"),
             os.path.join(self.local_cache, "video_posters"),
             os.path.join(self.local_cache, "sidecars"),
+            os.path.join(self.local_cache, "processing"),
+            os.path.join(self.local_cache, "local_sync_processed"),
         ]
         for dir_path in dirs:
             Path(dir_path).mkdir(parents=True, exist_ok=True)
+
+        # Create local sync folder if enabled and specified
+        if self.enable_local_folder_sync and self.local_sync_folder:
+            Path(self.local_sync_folder).mkdir(parents=True, exist_ok=True)
 
 
 # Global settings instance

@@ -30,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from shared.config import get_settings
 from shared.database import DatabaseManager, Asset, Review
 from shared.drive_client import DriveClient
+from worker.local_folder_poller import LocalFolderPoller
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -68,6 +69,23 @@ def get_drive_client() -> DriveClient:
         settings.service_account_json_path,
         settings.drive_root_folder_id
     )
+
+
+def get_local_sync_status() -> Optional[dict]:
+    """Get local folder sync status if enabled."""
+    settings = get_settings()
+    if not settings.enable_local_folder_sync or not settings.local_sync_folder:
+        return None
+
+    try:
+        poller = LocalFolderPoller(
+            sync_folder=settings.local_sync_folder,
+            cache_dir=settings.local_cache,
+            processed_dir=os.path.join(settings.local_cache, "local_sync_processed")
+        )
+        return poller.get_sync_status()
+    except Exception as e:
+        return {'error': str(e), 'is_enabled': False}
 
 
 def parse_date(date_str: Optional[str]) -> Optional[datetime]:
@@ -1181,6 +1199,30 @@ DASHBOARD_PAGE_TEMPLATE = '''
     </div>
 </div>
 
+{% if local_sync_status %}
+<!-- Local Sync Status -->
+<div class="chart-container" style="margin-bottom: 2rem;">
+    <h3>Local Folder Sync</h3>
+    <div class="stats-grid" style="margin-top: 1rem;">
+        <div class="stat-card">
+            <h3>{{ local_sync_status.pending_files }}</h3>
+            <p>Pending Files</p>
+        </div>
+        <div class="stat-card">
+            <h3>{{ local_sync_status.pending_size_mb }} MB</h3>
+            <p>Pending Size</p>
+        </div>
+        <div class="stat-card success">
+            <h3>{{ local_sync_status.processed_count }}</h3>
+            <p>Processed</p>
+        </div>
+    </div>
+    <p style="margin-top: 1rem; color: var(--text-muted); font-size: 0.875rem;">
+        Syncing from: <code>{{ local_sync_status.sync_folder }}</code>
+    </p>
+</div>
+{% endif %}
+
 <!-- Chart -->
 <div class="chart-container">
     <h3>Items by Status</h3>
@@ -1552,6 +1594,9 @@ def dashboard():
                 'status': item.status,
             })
 
+        # Get local sync status
+        local_sync_status = get_local_sync_status()
+
         return render_with_base(
             DASHBOARD_PAGE_TEMPLATE,
             page_title='Dashboard',
@@ -1560,6 +1605,7 @@ def dashboard():
             reviewed_today=reviewed_today,
             reviewed_this_week=reviewed_this_week,
             recent_items=recent_items_data,
+            local_sync_status=local_sync_status,
         )
     finally:
         session.close()
@@ -1905,15 +1951,28 @@ def api_stats():
             Asset.approved_at >= week_ago
         ).count()
 
+        # Include local sync status
+        local_sync = get_local_sync_status()
+
         return jsonify({
             'success': True,
             'counts': status_counts,
             'reviewed_today': reviewed_today,
             'reviewed_this_week': reviewed_this_week,
+            'local_sync': local_sync,
         })
 
     finally:
         session.close()
+
+
+@app.route('/api/local_sync_status')
+def api_local_sync_status():
+    """Get local folder sync status."""
+    status = get_local_sync_status()
+    if status:
+        return jsonify({'success': True, **status})
+    return jsonify({'success': True, 'is_enabled': False, 'message': 'Local folder sync is not enabled'})
 
 
 # Error handlers

@@ -1,4 +1,5 @@
 """Main worker for processing media files."""
+import os
 import sys
 import time
 import json
@@ -14,7 +15,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from shared.config import get_settings
 from shared.drive_client import DriveClient
 from shared.database import DatabaseManager
-from shared.models import AssetSidecar, AssetType, AssetStatus
+from shared.models import AssetSidecar, AssetType, AssetStatus, SyncSource
+
+from worker.local_folder_poller import LocalFolderPoller, create_local_file_info
 
 from worker.processors.metadata_extractor import MetadataExtractor
 from worker.processors.media_processor import MediaProcessor
@@ -33,12 +36,13 @@ class AssetProcessor:
         self.drive = drive_client
         self.cache_dir = Path(settings.local_cache)
 
-    def process_asset(self, drive_file: Dict[str, Any], contributor_token: str, batch_id: str) -> Optional[str]:
+    def process_asset(self, drive_file: Dict[str, Any], contributor_token: str, batch_id: str, sync_source: SyncSource = SyncSource.DRIVE_INBOX) -> Optional[str]:
         """Process a single asset through the entire pipeline."""
         file_id = drive_file['id']
         filename = drive_file['name']
+        is_local = drive_file.get('source') == 'local_folder'
 
-        logger.info(f"Processing asset: {filename} ({file_id})")
+        logger.info(f"Processing asset: {filename} ({file_id}) [source: {sync_source.value}]")
 
         try:
             # Determine asset type
@@ -49,14 +53,21 @@ class AssetProcessor:
                 logger.warning(f"Unsupported file type: {mime_type}")
                 return None
 
-            # Download file to cache
-            local_path = self.cache_dir / "processing" / file_id / filename
-            if not self.drive.download_file(file_id, local_path):
-                raise Exception("Failed to download file")
+            # Get file to cache
+            if is_local:
+                # For local files, the path is already prepared
+                local_path = Path(drive_file['local_path'])
+                if not local_path.exists():
+                    raise Exception(f"Local file not found: {local_path}")
+            else:
+                # Download file from Drive to cache
+                local_path = self.cache_dir / "processing" / file_id / filename
+                if not self.drive.download_file(file_id, local_path):
+                    raise Exception("Failed to download file")
 
             # Initialize sidecar
             sidecar = AssetSidecar(
-                drive_file_id=file_id,
+                drive_file_id=file_id if not is_local else None,
                 original_filename=filename,
                 contributor_token=contributor_token,
                 batch_id=batch_id,
@@ -64,8 +75,10 @@ class AssetProcessor:
                 asset_type=asset_type,
                 mime_type=mime_type,
                 file_size_bytes=int(drive_file.get('size', 0)),
-                drive_path=f"PROCESSING/{filename}",
-                status=AssetStatus.PROCESSING
+                drive_path=f"PROCESSING/{filename}" if not is_local else "",
+                status=AssetStatus.PROCESSING,
+                sync_source=sync_source,
+                local_source_path=drive_file.get('original_local_path') if is_local else None
             )
 
             # PHASE 1: Fast metadata extraction (no GPU)
@@ -323,6 +336,15 @@ class AssetProcessor:
 
     def _route_asset(self, sidecar: AssetSidecar):
         """Route asset in Drive based on status."""
+        # Skip Drive routing for local folder imports
+        if sidecar.sync_source == SyncSource.LOCAL_FOLDER:
+            logger.info(f"Skipping Drive routing for local file: {sidecar.original_filename}")
+            return
+
+        if not sidecar.drive_file_id:
+            logger.warning(f"No drive_file_id for asset: {sidecar.original_filename}")
+            return
+
         try:
             if sidecar.duplicate_of:
                 # Move to Possible_Duplicates
@@ -373,6 +395,16 @@ class Worker:
 
         self.processor = AssetProcessor(self.settings, self.db, self.drive)
 
+        # Initialize local folder poller if enabled
+        self.local_poller = None
+        if self.settings.enable_local_folder_sync and self.settings.local_sync_folder:
+            self.local_poller = LocalFolderPoller(
+                sync_folder=self.settings.local_sync_folder,
+                cache_dir=self.settings.local_cache,
+                processed_dir=os.path.join(self.settings.local_cache, "local_sync_processed")
+            )
+            logger.info(f"Local folder sync enabled: {self.settings.local_sync_folder}")
+
     def run(self):
         """Main worker loop."""
         logger.info("Worker started")
@@ -381,8 +413,19 @@ class Worker:
         contributor_folders = list(self.settings.get_contributor_tokens().values())
         self.drive.setup_folder_structure(contributor_folders)
 
+        # Track last local sync time
+        last_local_sync = 0
+
         while True:
             try:
+                # Process local folder if enabled
+                if self.local_poller:
+                    current_time = time.time()
+                    if current_time - last_local_sync >= self.settings.local_sync_poll_interval_seconds:
+                        self._process_local_folder()
+                        last_local_sync = current_time
+
+                # Process Drive inbox
                 self._process_inbox()
                 time.sleep(self.settings.worker_poll_interval_seconds)
             except KeyboardInterrupt:
@@ -419,7 +462,67 @@ class Worker:
 
                 # Process asset
                 batch_id = f"auto_{datetime.utcnow().strftime('%Y%m%d')}"
-                self.processor.process_asset(file, token, batch_id)
+                self.processor.process_asset(file, token, batch_id, SyncSource.DRIVE_INBOX)
+
+    def _process_local_folder(self):
+        """Process files from the local sync folder."""
+        if not self.local_poller:
+            return
+
+        logger.info("Checking for new files in local sync folder...")
+
+        # Scan for new files
+        new_files = self.local_poller.scan_for_new_files(
+            batch_size=self.settings.local_sync_batch_size
+        )
+
+        if not new_files:
+            return
+
+        logger.info(f"Found {len(new_files)} new local files to process")
+
+        # Process each file
+        batch_id = f"local_{datetime.utcnow().strftime('%Y%m%d')}"
+        contributor_token = self.settings.local_folder_contributor_token
+
+        for file_info in new_files:
+            try:
+                # Prepare file for processing (copy to cache)
+                cached_path = self.local_poller.prepare_file_for_processing(file_info)
+
+                if not cached_path:
+                    logger.error(f"Failed to prepare file: {file_info['name']}")
+                    continue
+
+                # Create file info compatible with process_asset
+                process_file_info = create_local_file_info(cached_path, file_info)
+
+                # Process the asset
+                asset_id = self.processor.process_asset(
+                    process_file_info,
+                    contributor_token,
+                    batch_id,
+                    SyncSource.LOCAL_FOLDER
+                )
+
+                if asset_id:
+                    # Mark as processed and optionally delete/move original
+                    self.local_poller.mark_file_processed(
+                        file_info,
+                        delete_original=self.settings.local_sync_delete_after_import
+                    )
+                    logger.info(f"Successfully processed local file: {file_info['name']}")
+                else:
+                    logger.warning(f"Failed to process local file: {file_info['name']}")
+
+            except Exception as e:
+                logger.error(f"Error processing local file {file_info['name']}: {e}")
+
+    def get_local_sync_status(self) -> Optional[Dict[str, Any]]:
+        """Get the current local sync status."""
+        if self.local_poller:
+            return self.local_poller.get_sync_status()
+        return None
 
 
 def main():
