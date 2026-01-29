@@ -1,0 +1,15 @@
+==================================================
+Family Archive Vault - Connection Test
+==================================================
+[OK] Service account file found
+[OK] Credentials loaded successfully
+    Service Account: archive-worker@family-archive-vault.iam.gserviceaccount.com
+[OK] Google Drive API service created
+[OK] Family_Archive folder found!
+    Folder ID: 1aBx9VH0mM8ZwQfOhHELbToGoZ90WubJz
+[OK] Configuration saved to F:\FamilyArchive\config\drive_config.json
+[OK] INBOX subfolder already exists (ID: 1Ny4JtG_86wm5VlKj4qDK_Ven4qx2XRa7)
+
+==================================================
+CONNECTION TEST PASSED!
+==================================================

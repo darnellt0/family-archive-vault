@@ -1,0 +1,10 @@
+=== TABLES ===
+media
+sqlite_sequence
+metadata
+captions
+process_log
+
+=== MEDIA TABLE ===
+Rows: 1
+(1, '1r9Ps_JsHxAj4l_bkmerGXDWZW68IsQkE', '20251227_191643.jpg', '20251227_191643.jpg', 'image/jpeg', 1152950, None, 'pending', 'INBOX', '2026-01-24T22:40:02.051Z', None, None, '2026-01-24 22:50:09')

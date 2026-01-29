@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Family Archive Vault - Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            min-height: 100vh; 
+            padding: 20px; 
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header { background: white; padding: 40px; border-radius: 15px; margin-bottom: 40px; box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1); }
+        .header h1 { font-size: 36px; color: #333; margin-bottom: 10px; }
+        .header p { font-size: 16px; color: #666; }
+        .nav-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-top: 30px; }
+        .nav-card { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            padding: 25px; 
+            border-radius: 12px; 
+            text-decoration: none; 
+            color: white; 
+            text-align: center; 
+            transition: all 0.3s ease; 
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3); 
+        }
+        .nav-card:hover { transform: translateY(-5px); box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4); }
+        .nav-card h3 { font-size: 20px; margin-bottom: 10px; }
+        .nav-card p { font-size: 14px; opacity: 0.9; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 40px; }
+        .stat-card { 
+            background: white; 
+            padding: 25px; 
+            border-radius: 12px; 
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); 
+            text-align: center; 
+        }
+        .stat-number { font-size: 36px; font-weight: 700; color: #667eea; margin-bottom: 10px; }
+        .stat-label { font-size: 14px; color: #666; font-weight: 500; }
+        .recent-section { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+        .recent-section h2 { font-size: 22px; color: #333; margin-bottom: 20px; }
+        .recent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 15px; }
+        .recent-item { 
+            border-radius: 8px; 
+            overflow: hidden; 
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); 
+            transition: all 0.3s ease; 
+        }
+        .recent-item:hover { transform: scale(1.05); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); }
+        .recent-item img { width: 100%; height: 150px; object-fit: cover; display: block; }
+        .recent-item-info { padding: 10px; background: #f9f9f9; }
+        .recent-item-name { font-size: 12px; font-weight: 600; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .empty-state { text-align: center; padding: 40px; color: #999; }
+        .empty-state h3 { font-size: 18px; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📸 Family Archive Vault</h1>
+            <p>Your family's memories, organized and searchable</p>
+        </div>
+
+        <!-- Statistics Section -->
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-number">{{ stats.total or 0 }}</div>
+                <div class="stat-label">Total Items</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{{ stats.pending or 0 }}</div>
+                <div class="stat-label">Pending Review</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{{ stats.approved or 0 }}</div>
+                <div class="stat-label">Approved</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{{ stats.rejected or 0 }}</div>
+                <div class="stat-label">Rejected</div>
+            </div>
+        </div>
+
+        <!-- Navigation Cards -->
+        <div class="nav-grid">
+            <a href="/pending" class="nav-card">
+                <h3>⏳ Pending Review</h3>
+                <p>Review and approve new uploads</p>
+            </a>
+            <a href="/approved" class="nav-card">
+                <h3>✅ Approved Archive</h3>
+                <p>Browse your approved collection</p>
+            </a>
+            <a href="/people" class="nav-card">
+                <h3>👥 People</h3>
+                <p>Browse by family members</p>
+            </a>
+        </div>
+
+        <!-- Recent Items Section -->
+        {% if recent_items %}
+        <div class="recent-section">
+            <h2>Recent Uploads</h2>
+            <div class="recent-grid">
+                {% for item in recent_items %}
+                <div class="recent-item">
+                    <img src="/thumbnail/{{ item.drive_id }}" alt="{{ item.filename }}">
+                    <div class="recent-item-info">
+                        <div class="recent-item-name">{{ item.filename[:20] }}</div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <h3>No Recent Items</h3>
+            <p>Start uploading photos to see them here</p>
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block content %}
+  <h2>{{ person }}</h2>
+  <div class="grid">
+    {% for item in items %}
+      <div class="card">
+        <strong>{{ item.original_filename }}</strong><br />
+        <span class="tag">{{ item.mime_type }}</span>
+      </div>
+    {% endfor %}
+  </div>
+{% endblock %}

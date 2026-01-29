@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Family Archive Vault{% endblock %}</title>
+    <link href="{{ url_for('static', filename='dist/output.css') }}" rel="stylesheet">
+    <style>
+        /* Smooth transitions and animations */
+        * { transition: all 0.3s ease; }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-archive-blue to-archive-purple min-h-screen">
+    <!-- Navigation -->
+    <nav class="bg-white shadow-lg sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <!-- Logo -->
+                <div class="flex items-center">
+                    <a href="/" class="text-2xl font-bold text-archive-blue">📸 Archive Vault</a>
+                </div>
+                
+                <!-- Desktop Menu -->
+                <div class="hidden md:flex space-x-8">
+                    <a href="/" class="text-gray-700 hover:text-archive-blue font-medium">Dashboard</a>
+                    <a href="/pending" class="text-gray-700 hover:text-archive-blue font-medium">Pending</a>
+                    <a href="/approved" class="text-gray-700 hover:text-archive-blue font-medium">Archive</a>
+                    <a href="/people" class="text-gray-700 hover:text-archive-blue font-medium">People</a>
+                    <a href="/duplicates" class="text-gray-700 hover:text-archive-blue font-medium">Duplicates</a>
+                </div>
+
+                <!-- Mobile Menu Button -->
+                <button id="mobile-menu-btn" class="md:hidden p-2 rounded-lg hover:bg-gray-100">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Mobile Menu -->
+            <div id="mobile-menu" class="hidden md:hidden pb-4 space-y-2">
+                <a href="/" class="block px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg">Dashboard</a>
+                <a href="/pending" class="block px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg">Pending</a>
+                <a href="/approved" class="block px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg">Archive</a>
+                <a href="/people" class="block px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg">People</a>
+                <a href="/duplicates" class="block px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg">Duplicates</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="fixed bottom-4 right-4 space-y-2 z-50"></div>
+
+    <script>
+        // Mobile menu toggle
+        const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+        const mobileMenu = document.getElementById('mobile-menu');
+        mobileMenuBtn.addEventListener('click', () => {
+            mobileMenu.classList.toggle('hidden');
+        });
+
+        // Toast notification helper
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            const bgColor = type === 'success' ? 'bg-green-500' : type === 'error' ? 'bg-red-500' : 'bg-blue-500';
+            toast.className = `${bgColor} text-white px-6 py-3 rounded-lg shadow-lg font-semibold`;
+            toast.textContent = message;
+            document.getElementById('toast-container').appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+    </script>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

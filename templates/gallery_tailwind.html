@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }} - Family Archive Vault{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="bg-white rounded-2xl shadow-lg p-6">
+        <h1 class="text-3xl font-bold text-gray-900 mb-4">{{ title }}</h1>
+        
+        <!-- Search and Filter Controls -->
+        <div class="flex flex-col md:flex-row gap-4">
+            <!-- Search Bar -->
+            <form method="GET" class="flex-1 flex gap-2">
+                <input 
+                    type="text" 
+                    name="search" 
+                    placeholder="Search by filename or caption..." 
+                    value="{{ search_query }}"
+                    class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-archive-blue"
+                >
+                <button type="submit" class="px-6 py-2 bg-archive-blue text-white rounded-lg font-semibold hover:bg-archive-purple transition-colors">
+                    Search
+                </button>
+            </form>
+
+            <!-- Sort Dropdown -->
+            <select name="sort" onchange="this.form.submit()" class="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-archive-blue">
+                <option value="newest" {% if sort_by == 'newest' %}selected{% endif %}>Newest First</option>
+                <option value="oldest" {% if sort_by == 'oldest' %}selected{% endif %}>Oldest First</option>
+                <option value="date_taken_newest" {% if sort_by == 'date_taken_newest' %}selected{% endif %}>Date Taken (Newest)</option>
+                <option value="date_taken_oldest" {% if sort_by == 'date_taken_oldest' %}selected{% endif %}>Date Taken (Oldest)</option>
+                <option value="filename_asc" {% if sort_by == 'filename_asc' %}selected{% endif %}>Filename (A-Z)</option>
+                <option value="filename_desc" {% if sort_by == 'filename_desc' %}selected{% endif %}>Filename (Z-A)</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Gallery Grid -->
+    {% if items %}
+    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+        {% for item in items %}
+        <div class="media-card group relative">
+            <input type="checkbox" class="item-checkbox absolute top-2 left-2 z-10 w-4 h-4 rounded" data-drive-id="{{ item.drive_id }}">
+            <div class="relative overflow-hidden rounded-lg bg-gray-200 h-40">
+                <img src="/thumbnail/{{ item.drive_id }}" alt="{{ item.filename }}" class="w-full h-full object-cover group-hover:scale-110 transition-transform">
+            </div>
+            <div class="p-3">
+                <p class="text-xs font-semibold text-gray-800 truncate">{{ item.filename[:20] }}</p>
+                {% if item.ai_caption %}
+                <p class="text-xs text-gray-600 italic truncate mt-1">{{ item.ai_caption[:30] }}</p>
+                {% endif %}
+                <p class="text-xs text-gray-500 mt-1">{{ item.uploaded_date[:10] }}</p>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Pagination -->
+    {% if pagination.total_pages > 1 %}
+    <div class="flex justify-center items-center gap-4 mt-8">
+        {% if pagination.has_prev %}
+        <a href="?page={{ pagination.current_page - 1 }}&search={{ search_query }}&sort={{ sort_by }}" class="px-4 py-2 bg-archive-blue text-white rounded-lg hover:bg-archive-purple transition-colors">
+            ← Previous
+        </a>
+        {% endif %}
+        
+        <span class="text-gray-700 font-semibold">
+            Page {{ pagination.current_page }} of {{ pagination.total_pages }}
+        </span>
+        
+        {% if pagination.has_next %}
+        <a href="?page={{ pagination.current_page + 1 }}&search={{ search_query }}&sort={{ sort_by }}" class="px-4 py-2 bg-archive-blue text-white rounded-lg hover:bg-archive-purple transition-colors">
+            Next →
+        </a>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Bulk Actions -->
+    <div class="sticky bottom-4 bg-white rounded-lg shadow-lg p-4 hidden" id="bulk-actions">
+        <div class="flex items-center justify-between">
+            <span class="text-sm font-semibold text-gray-700">
+                <span id="selected-count">0</span> items selected
+            </span>
+            <div class="flex gap-3">
+                <button onclick="bulkAction('approve')" class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-semibold">
+                    ✓ Approve
+                </button>
+                <button onclick="bulkAction('reject')" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-semibold">
+                    ✗ Reject
+                </button>
+            </div>
+        </div>
+    </div>
+
+    {% else %}
+    <div class="bg-white rounded-2xl shadow-lg p-12 text-center">
+        <h3 class="text-xl font-semibold text-gray-700 mb-2">No Items Found</h3>
+        <p class="text-gray-500">Try adjusting your search or filters</p>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+    // Bulk selection logic
+    const checkboxes = document.querySelectorAll('.item-checkbox');
+    const bulkActionsDiv = document.getElementById('bulk-actions');
+    const selectedCountSpan = document.getElementById('selected-count');
+
+    function updateBulkActions() {
+        const selected = document.querySelectorAll('.item-checkbox:checked').length;
+        selectedCountSpan.textContent = selected;
+        bulkActionsDiv.classList.toggle('hidden', selected === 0);
+    }
+
+    checkboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', updateBulkActions);
+    });
+
+    function bulkAction(action) {
+        const selected = Array.from(document.querySelectorAll('.item-checkbox:checked')).map(cb => cb.dataset.driveId);
+        if (selected.length === 0) return;
+
+        fetch('/api/bulk_action', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ drive_ids: selected, action: action })
+        })
+        .then(res => res.json())
+        .then(data => {
+            showToast(`${data.count} items ${action === 'approve' ? 'approved' : 'rejected'}!`);
+            setTimeout(() => location.reload(), 1500);
+        });
+    }
+</script>
+{% endblock %}

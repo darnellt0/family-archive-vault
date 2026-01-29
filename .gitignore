@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+ENV/
+
+# Database
+*.db
+*.sqlite3
+contributors.db
+
+# Secrets - NEVER commit these
+service-account.json
+*.pem
+*.key
+.env
+
+# Session data
+upload_sessions.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Windows reserved names
+nul
+NUL
+
+# Node (if any frontend)
+node_modules/

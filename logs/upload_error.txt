@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "F:\FamilyArchive\upload_test.py", line 25, in <module>
+    file = service.files().create(body=file_metadata, media_body=media, fields='id, name').execute()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\darne\AppData\Local\Programs\Python\Python311\Lib\site-packages\googleapiclient\_helpers.py", line 130, in positional_wrapper
+    return wrapped(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\darne\AppData\Local\Programs\Python\Python311\Lib\site-packages\googleapiclient\http.py", line 938, in execute
+    raise HttpError(resp, content, uri=self.uri)
+googleapiclient.errors.HttpError: <HttpError 403 when requesting https://www.googleapis.com/upload/drive/v3/files?fields=id%2C+name&alt=json&uploadType=multipart returned "Service Accounts do not have storage quota. Leverage shared drives (https://developers.google.com/workspace/drive/api/guides/about-shareddrives), or use OAuth delegation (http://support.google.com/a/answer/7281227) instead.". Details: "[{'message': 'Service Accounts do not have storage quota. Leverage shared drives (https://developers.google.com/workspace/drive/api/guides/about-shareddrives), or use OAuth delegation (http://support.google.com/a/answer/7281227) instead.', 'domain': 'usageLimits', 'reason': 'storageQuotaExceeded'}]">

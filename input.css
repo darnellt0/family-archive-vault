@@ -1,0 +1,14 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* You can add custom global styles or component classes here */
+@layer components {
+  .btn-primary {
+    @apply px-4 py-2 bg-archive-blue text-white rounded-lg font-semibold hover:bg-archive-purple transition-all duration-300 shadow-md hover:shadow-lg;
+  }
+  
+  .media-card {
+    @apply bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1;
+  }
+}

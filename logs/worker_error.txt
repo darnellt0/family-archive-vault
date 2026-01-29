@@ -1,0 +1,6 @@
+2026-01-24 14:50:07,964 - INFO - Database initialized at F:\FamilyArchive\data\archive.db
+2026-01-24 14:50:07,991 - INFO - Starting INBOX scan...
+2026-01-24 14:50:08,012 - INFO - file_cache is only supported with oauth2client<4.0.0
+2026-01-24 14:50:09,372 - INFO - Found 1 files in INBOX
+2026-01-24 14:50:09,506 - INFO - Added: 20251227_191643.jpg (ID: 1)
+2026-01-24 14:50:09,523 - INFO - Scan complete. New: 1, Skipped: 0

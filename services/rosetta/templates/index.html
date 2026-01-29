@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+  <h2>By Decade</h2>
+  <div class="grid">
+    {% for decade, items in decades.items() %}
+      <div class="card">
+        <a href="decades/{{ decade }}.html"><strong>{{ decade }}</strong></a>
+        <div class="tag">{{ items|length }} items</div>
+      </div>
+    {% endfor %}
+  </div>
+
+  <h2>People</h2>
+  <div class="grid">
+    {% for person in people %}
+      <div class="card">
+        <a href="people/{{ person|replace(' ', '_') }}.html">{{ person }}</a>
+      </div>
+    {% endfor %}
+  </div>
+{% endblock %}

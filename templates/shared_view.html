@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block title %}Shared Archive - Family Archive Vault{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    {% if requires_password %}
+    <!-- Password Protection Form -->
+    <div class="max-w-md mx-auto mt-16">
+        <div class="bg-white rounded-lg shadow-lg p-8">
+            <h1 class="text-2xl font-bold text-archive-purple mb-4">Protected Archive</h1>
+            <p class="text-gray-600 mb-6">This shared archive is password protected. Please enter the password to continue.</p>
+            
+            <form id="passwordForm" class="space-y-4">
+                <input type="password" id="password" placeholder="Enter password" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-archive-blue" required>
+                <button type="submit" class="btn-primary w-full">Unlock</button>
+            </form>
+            
+            <div id="errorMessage" class="mt-4 text-red-600 text-sm hidden"></div>
+        </div>
+    </div>
+    
+    <script>
+    document.getElementById('passwordForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const password = document.getElementById('password').value;
+        
+        try {
+            const response = await fetch(`/share/{{ token }}/verify`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password })
+            });
+            
+            if (response.ok) {
+                location.reload();
+            } else {
+                document.getElementById('errorMessage').textContent = 'Incorrect password';
+                document.getElementById('errorMessage').classList.remove('hidden');
+            }
+        } catch (error) {
+            document.getElementById('errorMessage').textContent = 'Error verifying password';
+            document.getElementById('errorMessage').classList.remove('hidden');
+        }
+    });
+    </script>
+    {% else %}
+    <!-- Shared Gallery View -->
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold text-archive-purple mb-2">{{ share_name }}</h1>
+        <p class="text-gray-600">Shared by Family Archive Vault</p>
+    </div>
+    
+    <!-- Gallery Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {% for item in media %}
+        <div class="media-card group">
+            <div class="relative overflow-hidden bg-gray-200 h-64">
+                <img src="{{ item.thumbnail_url }}" alt="{{ item.filename }}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300">
+                
+                {% if allow_download %}
+                <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <a href="{{ item.download_url }}" class="bg-archive-blue text-white px-3 py-1 rounded text-sm font-medium hover:bg-archive-purple">
+                        Download
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+            
+            <div class="p-4">
+                <h3 class="font-semibold text-gray-800 truncate">{{ item.filename }}</h3>
+                <p class="text-sm text-gray-600">{{ item.uploaded_date }}</p>
+                
+                {% if item.ai_caption %}
+                <p class="text-sm text-gray-700 italic mt-2">{{ item.ai_caption }}</p>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    
+    {% if not media %}
+    <div class="text-center py-16">
+        <p class="text-gray-500 text-lg">No media items in this shared archive.</p>
+    </div>
+    {% endif %}
+    
+    <!-- Footer Info -->
+    <div class="mt-12 text-center text-sm text-gray-600">
+        <p>This link will expire on {{ expires_date }}</p>
+        {% if max_views %}
+        <p>Views remaining: {{ max_views - view_count }}</p>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

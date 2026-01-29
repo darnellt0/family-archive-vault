@@ -1,0 +1,7 @@
+Family_Archive ID: 1aBx9VH0mM8ZwQfOhHELbToGoZ90WubJz
+  Created INBOX (ID: 1Ny4JtG_86wm5VlKj4qDK_Ven4qx2XRa7)
+  Created ARCHIVE (ID: 1kHXpZWv1FMihHRvQtSP4NdDqxCw_3nfq)
+  Created REJECTED (ID: 1Rf4D-jLYqlLXj6RuHzP-BmTbtV2HSTnp)
+  Created METADATA (ID: 1rB-Umx4j0Ec1xmDLHQaUGS50vPgb9tB-)
+
+Folder IDs saved to: F:\FamilyArchive\config\drive_folders.json

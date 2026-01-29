@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block title %}Transcript Search - Family Archive Vault{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <h1 class="text-3xl font-bold text-archive-purple mb-2">Search Video Transcripts</h1>
+    <p class="text-gray-600 mb-8">Find moments in your family videos by searching what was said.</p>
+    
+    <!-- Search Bar -->
+    <div class="bg-white rounded-lg shadow-lg p-8 mb-8">
+        <div class="flex gap-4">
+            <input type="text" id="searchQuery" placeholder="Search for words, names, or phrases..." class="flex-1 px-6 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-archive-blue text-lg">
+            <button onclick="performSearch()" class="btn-primary px-8">Search</button>
+        </div>
+    </div>
+    
+    <!-- Results Section -->
+    <div id="resultsContainer" class="space-y-6">
+        <p class="text-gray-500 text-center py-12">Enter a search query to find moments in your videos.</p>
+    </div>
+</div>
+
+<script>
+document.getElementById('searchQuery').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') performSearch();
+});
+
+async function performSearch() {
+    const query = document.getElementById('searchQuery').value.trim();
+    
+    if (!query) {
+        alert('Please enter a search query');
+        return;
+    }
+    
+    const container = document.getElementById('resultsContainer');
+    container.innerHTML = '<p class="text-center text-gray-500">Searching...</p>';
+    
+    try {
+        const response = await fetch('/api/search-transcripts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query })
+        });
+        
+        const results = await response.json();
+        
+        if (results.length === 0) {
+            container.innerHTML = '<p class="text-center text-gray-500 py-12">No results found for "' + query + '"</p>';
+            return;
+        }
+        
+        container.innerHTML = results.map(result => `
+            <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
+                <h3 class="text-xl font-semibold text-archive-purple mb-4">
+                    <a href="/video/${result.drive_id}" class="hover:text-archive-blue">${result.filename}</a>
+                </h3>
+                
+                <div class="space-y-3">
+                    ${result.matching_segments.map(seg => `
+                        <div class="bg-gray-50 rounded p-4 cursor-pointer hover:bg-gray-100 transition-colors" 
+                             onclick="jumpToVideo('${result.drive_id}', ${seg.start})">
+                            <p class="text-sm font-semibold text-gray-600">${formatTime(seg.start)}</p>
+                            <p class="text-gray-800 mt-1">${highlightQuery(seg.text, '${query}')}</p>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        container.innerHTML = '<p class="text-center text-red-600">Error performing search: ' + error + '</p>';
+    }
+}
+
+function formatTime(seconds) {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    
+    if (hours > 0) {
+        return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+    return `${minutes}:${String(secs).padStart(2, '0')}`;
+}
+
+function highlightQuery(text, query) {
+    const regex = new RegExp(`(${query})`, 'gi');
+    return text.replace(regex, '<mark class="bg-yellow-200">$1</mark>');
+}
+
+function jumpToVideo(driveId, startTime) {
+    window.location.href = `/video/${driveId}?t=${startTime}`;
+}
+</script>
+{% endblock %}

@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} - Family Archive Vault</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        .header { background: white; padding: 30px; border-radius: 12px; margin-bottom: 30px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+        .header h1 { font-size: 28px; margin-bottom: 20px; color: #333; }
+        .controls { display: flex; gap: 15px; flex-wrap: wrap; align-items: center; }
+        .search-box { flex: 1; min-width: 250px; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px; }
+        .sort-select { padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px; cursor: pointer; }
+        .bulk-actions { display: flex; gap: 10px; align-items: center; }
+        .bulk-actions button { padding: 10px 16px; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; font-weight: 600; transition: all 0.3s ease; }
+        .btn-approve { background: #10b981; color: white; }
+        .btn-reject { background: #ef4444; color: white; }
+        .selection-info { font-size: 14px; color: #666; font-weight: 500; }
+        .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 20px; margin-bottom: 40px; }
+        .media-card { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); transition: all 0.3s ease; cursor: pointer; position: relative; }
+        .media-card:hover { transform: translateY(-4px); box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15); }
+        .media-card.selected { border: 3px solid #667eea; }
+        .media-image { width: 100%; height: 200px; object-fit: cover; background: #f0f0f0; }
+        .media-info { padding: 15px; }
+        .media-filename { font-size: 13px; font-weight: 600; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px; }
+        .media-caption { font-size: 12px; color: #555; font-style: italic; margin-bottom: 8px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .media-meta { font-size: 11px; color: #888; margin-bottom: 10px; }
+        .media-actions { display: flex; gap: 8px; }
+        .media-actions button { flex: 1; padding: 8px; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
+        .btn-view { background: #3b82f6; color: white; }
+        .checkbox { position: absolute; top: 10px; right: 10px; width: 20px; height: 20px; cursor: pointer; accent-color: #667eea; z-index: 10; }
+        .pagination { display: flex; justify-content: center; gap: 10px; margin-top: 40px; }
+        .pagination a, .pagination span { padding: 10px 14px; border-radius: 8px; background: white; color: #667eea; text-decoration: none; font-weight: 600; font-size: 14px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); }
+        .pagination .current { background: #667eea; color: white; }
+        .page-info { text-align: center; color: white; font-size: 14px; margin-bottom: 20px; }
+        .toast { position: fixed; bottom: 20px; right: 20px; padding: 16px 24px; border-radius: 8px; color: white; font-weight: 600; font-size: 14px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); z-index: 1000; }
+        .toast.success { background: #10b981; }
+        .toast.error { background: #ef4444; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>{{ title }}</h1>
+            <div class="controls">
+                <input type="text" class="search-box" id="searchBox" placeholder="Search filename or AI caption..." value="{{ search_query }}">
+                <select class="sort-select" id="sortSelect">
+                    <option value="newest" {% if sort_by == 'newest' %}selected{% endif %}>Upload: Newest</option>
+                    <option value="oldest" {% if sort_by == 'oldest' %}selected{% endif %}>Upload: Oldest</option>
+                    <option value="date_taken_newest" {% if sort_by == 'date_taken_newest' %}selected{% endif %}>Taken: Newest</option>
+                    <option value="date_taken_oldest" {% if sort_by == 'date_taken_oldest' %}selected{% endif %}>Taken: Oldest</option>
+                    <option value="filename_asc" {% if sort_by == 'filename_asc' %}selected{% endif %}>Filename A-Z</option>
+                </select>
+                
+                {% if status_filter == 'pending' %}
+                <div class="bulk-actions">
+                    <span class="selection-info" id="selectionInfo">0 selected</span>
+                    <button class="btn-approve" id="bulkApprove" disabled>Approve</button>
+                    <button class="btn-reject" id="bulkReject" disabled>Reject</button>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div class="gallery">
+            {% for item in items %}
+            <div class="media-card" data-drive-id="{{ item.drive_id }}">
+                <input type="checkbox" class="checkbox media-checkbox" data-drive-id="{{ item.drive_id }}">
+                <img src="/thumbnail/{{ item.drive_id }}" alt="{{ item.filename }}" class="media-image">
+                <div class="media-info">
+                    <div class="media-filename">{{ item.filename }}</div>
+                    {% if item.ai_caption and item.ai_caption != 'unknown' %}
+                        <div class="media-caption">"{{ item.ai_caption }}"</div>
+                    {% endif %}
+                    <div class="media-meta">
+                        {% if item.date_taken and item.date_taken != 'unknown' %}
+                            📅 Taken: {{ item.date_taken[:10] }}
+                        {% else %}
+                            ☁️ Uploaded: {{ item.uploaded_date[:10] }}
+                        {% endif %}
+                    </div>
+                    <div class="media-actions">
+                        <button class="btn-view" onclick="viewItem('{{ item.drive_id }}')">View</button>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        {% if pagination.total_pages > 1 %}
+        <div class="page-info">Showing {{ pagination.total_items }} items</div>
+        <div class="pagination">
+            {% if pagination.has_prev %}<a href="?page={{ pagination.current_page - 1 }}&search={{ search_query }}&sort={{ sort_by }}">Prev</a>{% endif %}
+            <span class="current">{{ pagination.current_page }} / {{ pagination.total_pages }}</span>
+            {% if pagination.has_next %}<a href="?page={{ pagination.current_page + 1 }}&search={{ search_query }}&sort={{ sort_by }}">Next</a>{% endif %}
+        </div>
+        {% endif %}
+    </div>
+    
+    <script>
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        document.getElementById('searchBox').addEventListener('keyup', e => {
+            if (e.key === 'Enter') window.location.href = `?search=${encodeURIComponent(e.target.value)}&sort=${document.getElementById('sortSelect').value}`;
+        });
+
+        document.getElementById('sortSelect').addEventListener('change', e => {
+            window.location.href = `?search=${encodeURIComponent(document.getElementById('searchBox').value)}&sort=${e.target.value}`;
+        });
+
+        {% if status_filter == 'pending' %}
+        const checkboxes = document.querySelectorAll('.media-checkbox');
+        const bulkApproveBtn = document.getElementById('bulkApprove');
+        const bulkRejectBtn = document.getElementById('bulkReject');
+        const selectionInfo = document.getElementById('selectionInfo');
+
+        checkboxes.forEach(cb => {
+            cb.addEventListener('change', () => {
+                const selected = document.querySelectorAll('.media-checkbox:checked').length;
+                selectionInfo.textContent = `${selected} selected`;
+                bulkApproveBtn.disabled = bulkRejectBtn.disabled = selected === 0;
+                cb.closest('.media-card').classList.toggle('selected', cb.checked);
+            });
+        });
+
+        async function handleBulk(action) {
+            const selected = Array.from(document.querySelectorAll('.media-checkbox:checked')).map(cb => cb.dataset.driveId);
+            if (!confirm(`${action.charAt(0).toUpperCase() + action.slice(1)} ${selected.length} items?`)) return;
+            const res = await fetch('/api/bulk_action', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ drive_ids: selected, action })
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                showToast(`${data.count} items ${action}ed!`);
+                setTimeout(() => location.reload(), 1000);
+            }
+        }
+
+        bulkApproveBtn.addEventListener('click', () => handleBulk('approve'));
+        bulkRejectBtn.addEventListener('click', () => handleBulk('reject'));
+        {% endif %}
+
+        function viewItem(id) { showToast('View coming soon!', 'info'); }
+    </script>
+</body>
+</html>

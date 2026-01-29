@@ -1,0 +1,10 @@
+2026-01-23 22:45:07,462 - INFO - Database initialized at F:\FamilyArchive\data\archive.db
+2026-01-23 22:45:07,463 - INFO - Starting INBOX scan...
+2026-01-23 22:45:07,508 - INFO - file_cache is only supported with oauth2client<4.0.0
+2026-01-23 22:45:08,603 - INFO - Found 0 files in INBOX
+2026-01-23 22:45:08,604 - INFO - Scan complete. New: 0, Skipped: 0
+
+Archive Stats: {
+  "total": 0,
+  "total_size_mb": 0.0
+}

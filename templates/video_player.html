@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+
+{% block title %}{{ filename }} - Family Archive Vault{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Video Player Section -->
+        <div class="lg:col-span-2">
+            <div class="bg-black rounded-lg overflow-hidden shadow-lg">
+                <video id="videoPlayer" class="w-full" controls>
+                    <source src="{{ video_url }}" type="video/mp4">
+                    Your browser does not support the video tag.
+                </video>
+            </div>
+            
+            <!-- Video Info -->
+            <div class="mt-6 bg-white rounded-lg shadow p-6">
+                <h1 class="text-2xl font-bold text-archive-purple mb-2">{{ filename }}</h1>
+                <p class="text-gray-600 mb-4">Uploaded: {{ uploaded_date }}</p>
+                
+                {% if ai_caption %}
+                <div class="bg-gray-100 rounded p-4 mb-4">
+                    <p class="text-sm font-semibold text-gray-700 mb-2">AI Description</p>
+                    <p class="text-gray-800">{{ ai_caption }}</p>
+                </div>
+                {% endif %}
+                
+                <!-- Transcript Search -->
+                <div class="mt-6">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Search Transcript</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="transcriptSearch" placeholder="Search for words or phrases..." class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-archive-blue">
+                        <button onclick="searchTranscript()" class="btn-primary">Search</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Transcript Panel -->
+        <div class="lg:col-span-1">
+            <div class="bg-white rounded-lg shadow-lg overflow-hidden flex flex-col h-full">
+                <div class="bg-archive-purple text-white px-6 py-4">
+                    <h2 class="text-lg font-semibold">Transcript</h2>
+                </div>
+                
+                <div id="transcriptContainer" class="flex-1 overflow-y-auto p-4 space-y-2">
+                    {% if transcript %}
+                        {% for segment in transcript.segments %}
+                        <div class="transcript-segment cursor-pointer hover:bg-archive-blue hover:bg-opacity-10 p-2 rounded transition-colors" 
+                             onclick="jumpToTime({{ segment.start }})"
+                             data-start="{{ segment.start }}"
+                             data-end="{{ segment.end }}">
+                            <p class="text-xs text-gray-500 font-semibold">{{ format_time(segment.start) }}</p>
+                            <p class="text-sm text-gray-800">{{ segment.text }}</p>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                    <p class="text-gray-500 text-sm">No transcript available for this video.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const videoPlayer = document.getElementById('videoPlayer');
+const transcriptContainer = document.getElementById('transcriptContainer');
+const transcriptSegments = document.querySelectorAll('.transcript-segment');
+
+// Highlight current segment as video plays
+videoPlayer.addEventListener('timeupdate', () => {
+    const currentTime = videoPlayer.currentTime;
+    
+    transcriptSegments.forEach(segment => {
+        const start = parseFloat(segment.dataset.start);
+        const end = parseFloat(segment.dataset.end);
+        
+        if (currentTime >= start && currentTime < end) {
+            segment.classList.add('bg-archive-blue', 'bg-opacity-20');
+            segment.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } else {
+            segment.classList.remove('bg-archive-blue', 'bg-opacity-20');
+        }
+    });
+});
+
+function jumpToTime(seconds) {
+    videoPlayer.currentTime = seconds;
+    videoPlayer.play();
+}
+
+function searchTranscript() {
+    const query = document.getElementById('transcriptSearch').value.toLowerCase();
+    
+    if (!query) {
+        transcriptSegments.forEach(seg => seg.classList.remove('ring-2', 'ring-yellow-400'));
+        return;
+    }
+    
+    transcriptSegments.forEach(segment => {
+        const text = segment.textContent.toLowerCase();
+        if (text.includes(query)) {
+            segment.classList.add('ring-2', 'ring-yellow-400');
+        } else {
+            segment.classList.remove('ring-2', 'ring-yellow-400');
+        }
+    });
+}
+
+// Allow Enter key to search
+document.getElementById('transcriptSearch').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') searchTranscript();
+});
+</script>
+
+<style>
+.transcript-segment {
+    border-left: 3px solid transparent;
+    transition: all 0.2s ease;
+}
+
+.transcript-segment:hover {
+    border-left-color: #667eea;
+    background-color: rgba(102, 126, 234, 0.05);
+}
+</style>
+{% endblock %}
