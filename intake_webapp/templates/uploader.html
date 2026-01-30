@@ -123,7 +123,12 @@
 
       if (res.status === 200 || res.status === 201) {
         const data = await res.json();
-        return { done: true, drive_file_id: data.id };
+        // Check if this is the final chunk (status: "complete") or just an intermediate chunk
+        if (data.status === "complete") {
+          return { done: true, status: "complete", object_key: data.object_key };
+        }
+        // Intermediate chunk - continue uploading
+        return { done: false, part_number: data.part_number };
       }
 
       if (res.status === 308) {
@@ -233,30 +238,37 @@
 
               const chunkSize = 5 * 1024 * 1024; // 5MB chunks for multipart
               let offset = 0;
+              let uploadComplete = false;
 
               while (offset < file.size) {
                 const end = Math.min(offset + chunkSize, file.size);
                 const chunk = file.data.slice(offset, end);
                 const contentRange = `bytes ${offset}-${end - 1}/${file.size}`;
 
+                console.log(`Uploading chunk: ${contentRange}`);
                 const result = await uploadChunkWithRetry(file, chunk, { contentRange }, init.upload_url, init.upload_id);
+                console.log("Chunk result:", result);
 
-                if (result.done || result.status === "complete") {
-                  uploadedFiles.push({
-                    original_name: file.name,
-                    mime: file.type || "application/octet-stream",
-                    size: file.size,
-                    object_key: init.object_key,
-                    upload_started_at: init.upload_started_at,
-                    upload_finished_at: new Date().toISOString()
-                  });
+                // Only break when server confirms upload is complete (last chunk processed)
+                if (result.status === "complete" || result.done === true) {
+                  uploadComplete = true;
                   break;
                 }
 
                 offset = end;
               }
 
-              console.log("Multipart upload complete for", file.name);
+              // Add to uploaded files list
+              uploadedFiles.push({
+                original_name: file.name,
+                mime: file.type || "application/octet-stream",
+                size: file.size,
+                object_key: init.object_key,
+                upload_started_at: init.upload_started_at,
+                upload_finished_at: new Date().toISOString()
+              });
+
+              console.log("Multipart upload complete for", file.name, "status:", uploadComplete);
             }
 
             // Update Uppy UI to show completion
