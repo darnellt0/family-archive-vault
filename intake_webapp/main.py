@@ -537,6 +537,8 @@ async def api_upload_init(payload: Dict[str, Any]):
     mime_type = payload.get("mime_type") or "application/octet-stream"
     size_bytes = int(payload.get("size_bytes") or 0)
 
+    print(f"[INIT] Starting upload for {filename} ({size_bytes} bytes)")
+
     if size_bytes > MAX_FILE_SIZE_BYTES:
         raise HTTPException(status_code=413, detail="File too large")
 
@@ -544,10 +546,19 @@ async def api_upload_init(payload: Dict[str, Any]):
     if not info:
         raise HTTPException(status_code=404, detail="Invalid token")
 
-    service = drive_service()
-    folder_id = contributor_folder_id(service, info["folder_name"])
+    print(f"[INIT] Contributor: {info['display_name']}, folder: {info['folder_name']}")
 
-    session_url = start_resumable_session(filename, mime_type, folder_id, size_bytes)
+    try:
+        service = drive_service()
+        folder_id = contributor_folder_id(service, info["folder_name"])
+        print(f"[INIT] Folder ID: {folder_id}")
+
+        session_url = start_resumable_session(filename, mime_type, folder_id, size_bytes)
+        print(f"[INIT] Session URL: {session_url[:100]}...")
+    except Exception as e:
+        print(f"[INIT ERROR] {type(e).__name__}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to initialize upload: {str(e)}")
+
     upload_id = str(uuid.uuid4())
     _SESSIONS.update(load_sessions())
     _SESSIONS[upload_id] = {
@@ -558,12 +569,14 @@ async def api_upload_init(payload: Dict[str, Any]):
     }
     save_sessions()
 
-    return {
+    response = {
         "batch_id": batch_id,
         "upload_id": upload_id,
         "upload_url": session_url,
         "upload_started_at": datetime.utcnow().isoformat(),
     }
+    print(f"[INIT] Returning: upload_id={upload_id}, url_present={bool(session_url)}")
+    return response
 
 
 @app.put("/api/upload/chunk")
