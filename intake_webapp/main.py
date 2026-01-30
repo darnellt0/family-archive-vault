@@ -606,7 +606,15 @@ async def api_upload_chunk(request: Request):
             return JSONResponse(content={"status": "resume", "next_offset": next_offset}, status_code=308)
 
     body = await request.body()
-    resp = upload_chunk(session_url, body, content_range, content_type)
+    print(f"[CHUNK] Uploading {len(body)} bytes, range: {content_range}")
+
+    try:
+        resp = upload_chunk(session_url, body, content_range, content_type)
+    except Exception as e:
+        print(f"[CHUNK ERROR] Exception during upload: {type(e).__name__}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
+    print(f"[CHUNK] Response status: {resp.status_code}")
 
     if resp.status_code in (200, 201):
         if upload_id and upload_id in _SESSIONS:
@@ -625,7 +633,9 @@ async def api_upload_chunk(request: Request):
             return JSONResponse(content={"status": "resume", "next_offset": next_offset}, status_code=308)
         return JSONResponse(content={"status": "resume"}, status_code=308)
 
-    raise HTTPException(status_code=500, detail=resp.text)
+    error_detail = resp.text[:500] if resp.text else f"HTTP {resp.status_code}"
+    print(f"[CHUNK ERROR] Google Drive returned {resp.status_code}: {error_detail}")
+    raise HTTPException(status_code=500, detail=error_detail)
 
 
 @app.post("/api/upload/complete")
