@@ -759,3 +759,204 @@ async def api_batch_finish(payload: Dict[str, Any]):
         "status": "ok",
         "message": f"Thanks! You have preserved {total} memories.",
     }
+
+
+# --- Dashboard Endpoints ---
+
+DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD", "")  # Set this in Railway
+
+
+def verify_dashboard_access(request: Request) -> bool:
+    """Check if user has dashboard access via cookie."""
+    if not DASHBOARD_PASSWORD:
+        return True  # No password set, allow access
+    auth_cookie = request.cookies.get("dashboard_auth")
+    expected = hashlib.sha256(DASHBOARD_PASSWORD.encode()).hexdigest()[:32]
+    return auth_cookie == expected
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard_page(request: Request):
+    """Dashboard main page - shows all uploads from R2."""
+    if not verify_dashboard_access(request):
+        return RedirectResponse(url="/dashboard/login", status_code=302)
+    return TEMPLATES.TemplateResponse("dashboard.html", {"request": request})
+
+
+@app.get("/dashboard/login", response_class=HTMLResponse)
+def dashboard_login_page(request: Request):
+    """Dashboard login page."""
+    if not DASHBOARD_PASSWORD:
+        return RedirectResponse(url="/dashboard", status_code=302)
+    return TEMPLATES.TemplateResponse("dashboard_login.html", {"request": request})
+
+
+@app.post("/dashboard/login")
+async def dashboard_login(request: Request):
+    """Handle dashboard login."""
+    form = await request.form()
+    password = form.get("password", "")
+
+    if password == DASHBOARD_PASSWORD:
+        response = RedirectResponse(url="/dashboard", status_code=302)
+        auth_hash = hashlib.sha256(DASHBOARD_PASSWORD.encode()).hexdigest()[:32]
+        response.set_cookie("dashboard_auth", auth_hash, max_age=86400 * 7)  # 7 days
+        return response
+
+    return TEMPLATES.TemplateResponse(
+        "dashboard_login.html",
+        {"request": request, "error": "Invalid password"}
+    )
+
+
+@app.get("/api/dashboard/files")
+async def api_dashboard_files(request: Request):
+    """Get all files from R2 for the dashboard."""
+    if not verify_dashboard_access(request):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    try:
+        s3 = get_r2_client()
+
+        # List all objects in the bucket
+        paginator = s3.get_paginator('list_objects_v2')
+
+        files = []
+        contributors = set()
+
+        for page in paginator.paginate(Bucket=R2_BUCKET_NAME):
+            for obj in page.get('Contents', []):
+                key = obj['Key']
+
+                # Skip manifests folder
+                if key.startswith('_manifests/'):
+                    continue
+
+                # Parse contributor folder from key
+                parts = key.split('/')
+                contributor = parts[0] if len(parts) > 1 else 'unknown'
+                contributors.add(contributor)
+
+                files.append({
+                    "key": key,
+                    "contributor": contributor,
+                    "filename": parts[-1] if parts else key,
+                    "size": obj['Size'],
+                    "last_modified": obj['LastModified'].isoformat(),
+                })
+
+        # Sort by most recent
+        files.sort(key=lambda x: x['last_modified'], reverse=True)
+
+        return {
+            "files": files,
+            "total_files": len(files),
+            "contributors": sorted(list(contributors)),
+        }
+
+    except Exception as e:
+        print(f"[DASHBOARD ERROR] {type(e).__name__}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/dashboard/manifests")
+async def api_dashboard_manifests(request: Request):
+    """Get all batch manifests from R2."""
+    if not verify_dashboard_access(request):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    try:
+        s3 = get_r2_client()
+
+        # List manifests
+        response = s3.list_objects_v2(
+            Bucket=R2_BUCKET_NAME,
+            Prefix='_manifests/'
+        )
+
+        manifests = []
+        for obj in response.get('Contents', []):
+            key = obj['Key']
+            if not key.endswith('.json'):
+                continue
+
+            # Get manifest content
+            manifest_obj = s3.get_object(Bucket=R2_BUCKET_NAME, Key=key)
+            manifest_data = json.loads(manifest_obj['Body'].read().decode('utf-8'))
+            manifest_data['_key'] = key
+            manifests.append(manifest_data)
+
+        # Sort by created_at descending
+        manifests.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+
+        return {"manifests": manifests, "total": len(manifests)}
+
+    except Exception as e:
+        print(f"[MANIFESTS ERROR] {type(e).__name__}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/dashboard/thumbnail/{file_key:path}")
+async def api_dashboard_thumbnail(request: Request, file_key: str):
+    """Generate a presigned URL for a file thumbnail."""
+    if not verify_dashboard_access(request):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    try:
+        s3 = get_r2_client()
+
+        # Generate presigned URL valid for 1 hour
+        url = s3.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': R2_BUCKET_NAME, 'Key': file_key},
+            ExpiresIn=3600,
+        )
+
+        return {"url": url}
+
+    except Exception as e:
+        print(f"[THUMBNAIL ERROR] {type(e).__name__}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/dashboard/stats")
+async def api_dashboard_stats(request: Request):
+    """Get dashboard statistics."""
+    if not verify_dashboard_access(request):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    try:
+        s3 = get_r2_client()
+
+        # Count files and total size
+        paginator = s3.get_paginator('list_objects_v2')
+
+        total_files = 0
+        total_size = 0
+        contributors = set()
+
+        for page in paginator.paginate(Bucket=R2_BUCKET_NAME):
+            for obj in page.get('Contents', []):
+                key = obj['Key']
+                if key.startswith('_manifests/'):
+                    continue
+                total_files += 1
+                total_size += obj['Size']
+                parts = key.split('/')
+                if len(parts) > 1:
+                    contributors.add(parts[0])
+
+        # Count manifests
+        manifest_resp = s3.list_objects_v2(Bucket=R2_BUCKET_NAME, Prefix='_manifests/')
+        total_batches = len([o for o in manifest_resp.get('Contents', []) if o['Key'].endswith('.json')])
+
+        return {
+            "total_files": total_files,
+            "total_size_mb": round(total_size / (1024 * 1024), 2),
+            "total_batches": total_batches,
+            "total_contributors": len(contributors),
+        }
+
+    except Exception as e:
+        print(f"[STATS ERROR] {type(e).__name__}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))

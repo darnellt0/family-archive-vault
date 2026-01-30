@@ -1,0 +1,611 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Family Archive Dashboard</title>
+  <style>
+    :root {
+      --bg-dark: #0f172a;
+      --bg-card: #1e293b;
+      --border: #334155;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+      --primary: #6366f1;
+      --primary-hover: #818cf8;
+      --success: #22c55e;
+      --warning: #f59e0b;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg-dark);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    .navbar {
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .navbar h1 {
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+
+    .navbar-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      margin-left: 1.5rem;
+      transition: color 0.2s;
+    }
+
+    .navbar-links a:hover { color: var(--text); }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .stat-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      text-align: center;
+    }
+
+    .stat-card h3 {
+      font-size: 2rem;
+      color: var(--primary);
+      margin-bottom: 0.5rem;
+    }
+
+    .stat-card p {
+      color: var(--text-muted);
+      font-size: 0.875rem;
+    }
+
+    .section {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+
+    .section-header h2 {
+      font-size: 1.125rem;
+      font-weight: 600;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .tab {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .tab:hover { border-color: var(--primary); color: var(--text); }
+    .tab.active { background: var(--primary); border-color: var(--primary); color: white; }
+
+    .filters {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .filter-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .filter-group label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+
+    .filter-group select, .filter-group input {
+      background: var(--bg-dark);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.5rem 0.75rem;
+      border-radius: 6px;
+      min-width: 150px;
+    }
+
+    .media-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 1rem;
+    }
+
+    .media-card {
+      background: var(--bg-dark);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .media-card:hover {
+      border-color: var(--primary);
+      transform: translateY(-2px);
+    }
+
+    .media-card img {
+      width: 100%;
+      height: 150px;
+      object-fit: cover;
+      background: var(--border);
+    }
+
+    .media-card-info {
+      padding: 0.75rem;
+    }
+
+    .media-card-info h4 {
+      font-size: 0.75rem;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 0.25rem;
+    }
+
+    .media-card-info p {
+      font-size: 0.625rem;
+      color: var(--text-muted);
+    }
+
+    .manifest-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .manifest-card {
+      background: var(--bg-dark);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .manifest-card:hover { border-color: var(--primary); }
+
+    .manifest-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 0.5rem;
+    }
+
+    .manifest-header h4 {
+      font-size: 0.875rem;
+      font-weight: 600;
+    }
+
+    .manifest-header .badge {
+      background: var(--primary);
+      color: white;
+      padding: 0.125rem 0.5rem;
+      border-radius: 12px;
+      font-size: 0.625rem;
+    }
+
+    .manifest-meta {
+      display: flex;
+      gap: 1rem;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+    }
+
+    .manifest-notes {
+      margin-top: 0.5rem;
+      padding-top: 0.5rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+    }
+
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.9);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .modal-overlay.visible { display: flex; }
+
+    .modal-content {
+      max-width: 90vw;
+      max-height: 90vh;
+      position: relative;
+    }
+
+    .modal-content img {
+      max-width: 100%;
+      max-height: 85vh;
+      border-radius: 8px;
+    }
+
+    .modal-close {
+      position: absolute;
+      top: -40px;
+      right: 0;
+      background: var(--bg-card);
+      border: none;
+      color: var(--text);
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 1.25rem;
+    }
+
+    .modal-info {
+      background: var(--bg-card);
+      border-radius: 8px;
+      padding: 1rem;
+      margin-top: 1rem;
+    }
+
+    .modal-info h3 {
+      font-size: 1rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .modal-info p {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+    }
+
+    .loading {
+      text-align: center;
+      padding: 3rem;
+      color: var(--text-muted);
+    }
+
+    .spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid var(--border);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 1rem;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .empty-state {
+      text-align: center;
+      padding: 3rem;
+      color: var(--text-muted);
+    }
+
+    .empty-state p { margin-top: 0.5rem; }
+
+    @media (max-width: 768px) {
+      .container { padding: 1rem; }
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      .filters { flex-direction: column; }
+      .media-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <nav class="navbar">
+    <h1>Family Archive Dashboard</h1>
+    <div class="navbar-links">
+      <a href="/register">Upload Portal</a>
+    </div>
+  </nav>
+
+  <div class="container">
+    <!-- Stats -->
+    <div class="stats-grid" id="statsGrid">
+      <div class="stat-card">
+        <h3 id="statFiles">-</h3>
+        <p>Total Files</p>
+      </div>
+      <div class="stat-card">
+        <h3 id="statSize">-</h3>
+        <p>Total Size</p>
+      </div>
+      <div class="stat-card">
+        <h3 id="statBatches">-</h3>
+        <p>Batches</p>
+      </div>
+      <div class="stat-card">
+        <h3 id="statContributors">-</h3>
+        <p>Contributors</p>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="section">
+      <div class="section-header">
+        <div class="tabs">
+          <button class="tab active" data-tab="files">Files</button>
+          <button class="tab" data-tab="batches">Batches</button>
+        </div>
+      </div>
+
+      <!-- Files Tab -->
+      <div id="filesTab">
+        <div class="filters">
+          <div class="filter-group">
+            <label>Contributor</label>
+            <select id="filterContributor">
+              <option value="">All Contributors</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Search</label>
+            <input type="text" id="filterSearch" placeholder="Search filename...">
+          </div>
+        </div>
+
+        <div id="filesGrid" class="media-grid">
+          <div class="loading">
+            <div class="spinner"></div>
+            <p>Loading files...</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Batches Tab -->
+      <div id="batchesTab" style="display: none;">
+        <div id="batchesList" class="manifest-list">
+          <div class="loading">
+            <div class="spinner"></div>
+            <p>Loading batches...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Image Modal -->
+  <div class="modal-overlay" id="imageModal">
+    <div class="modal-content">
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+      <img id="modalImage" src="" alt="">
+      <div class="modal-info">
+        <h3 id="modalFilename">-</h3>
+        <p id="modalMeta">-</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let allFiles = [];
+    let allManifests = [];
+
+    // Load stats
+    async function loadStats() {
+      try {
+        const res = await fetch('/api/dashboard/stats');
+        const data = await res.json();
+
+        document.getElementById('statFiles').textContent = data.total_files;
+        document.getElementById('statSize').textContent = data.total_size_mb + ' MB';
+        document.getElementById('statBatches').textContent = data.total_batches;
+        document.getElementById('statContributors').textContent = data.total_contributors;
+      } catch (err) {
+        console.error('Failed to load stats:', err);
+      }
+    }
+
+    // Load files
+    async function loadFiles() {
+      try {
+        const res = await fetch('/api/dashboard/files');
+        const data = await res.json();
+
+        allFiles = data.files;
+
+        // Populate contributor filter
+        const filterEl = document.getElementById('filterContributor');
+        data.contributors.forEach(c => {
+          const opt = document.createElement('option');
+          opt.value = c;
+          opt.textContent = c.replace('_UPLOADS', '');
+          filterEl.appendChild(opt);
+        });
+
+        renderFiles();
+      } catch (err) {
+        console.error('Failed to load files:', err);
+        document.getElementById('filesGrid').innerHTML = '<div class="empty-state"><p>Failed to load files</p></div>';
+      }
+    }
+
+    // Render files with filters
+    function renderFiles() {
+      const contributor = document.getElementById('filterContributor').value;
+      const search = document.getElementById('filterSearch').value.toLowerCase();
+
+      let filtered = allFiles;
+
+      if (contributor) {
+        filtered = filtered.filter(f => f.contributor === contributor);
+      }
+
+      if (search) {
+        filtered = filtered.filter(f => f.filename.toLowerCase().includes(search));
+      }
+
+      if (filtered.length === 0) {
+        document.getElementById('filesGrid').innerHTML = '<div class="empty-state"><p>No files found</p></div>';
+        return;
+      }
+
+      const html = filtered.map(file => `
+        <div class="media-card" onclick="openImage('${file.key}', '${file.filename}', '${file.contributor}', ${file.size})">
+          <img src="" data-key="${file.key}" alt="${file.filename}" loading="lazy">
+          <div class="media-card-info">
+            <h4>${file.filename}</h4>
+            <p>${file.contributor.replace('_UPLOADS', '')} &bull; ${formatSize(file.size)}</p>
+          </div>
+        </div>
+      `).join('');
+
+      document.getElementById('filesGrid').innerHTML = html;
+
+      // Load thumbnails
+      document.querySelectorAll('.media-card img[data-key]').forEach(async img => {
+        const key = img.dataset.key;
+        try {
+          const res = await fetch(`/api/dashboard/thumbnail/${encodeURIComponent(key)}`);
+          const data = await res.json();
+          img.src = data.url;
+        } catch (err) {
+          img.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="80">📷</text></svg>';
+        }
+      });
+    }
+
+    // Load batches/manifests
+    async function loadManifests() {
+      try {
+        const res = await fetch('/api/dashboard/manifests');
+        const data = await res.json();
+
+        allManifests = data.manifests;
+        renderManifests();
+      } catch (err) {
+        console.error('Failed to load manifests:', err);
+        document.getElementById('batchesList').innerHTML = '<div class="empty-state"><p>Failed to load batches</p></div>';
+      }
+    }
+
+    function renderManifests() {
+      if (allManifests.length === 0) {
+        document.getElementById('batchesList').innerHTML = '<div class="empty-state"><p>No batches found</p></div>';
+        return;
+      }
+
+      const html = allManifests.map(m => `
+        <div class="manifest-card">
+          <div class="manifest-header">
+            <h4>${m.contributor_display_name || 'Unknown'}</h4>
+            <span class="badge">${m.files?.length || 0} files</span>
+          </div>
+          <div class="manifest-meta">
+            <span>${formatDate(m.created_at)}</span>
+            ${m.decade ? `<span>${m.decade}</span>` : ''}
+          </div>
+          ${m.notes ? `<div class="manifest-notes">${m.notes}</div>` : ''}
+        </div>
+      `).join('');
+
+      document.getElementById('batchesList').innerHTML = html;
+    }
+
+    // Tab switching
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+
+        const tabName = tab.dataset.tab;
+        document.getElementById('filesTab').style.display = tabName === 'files' ? 'block' : 'none';
+        document.getElementById('batchesTab').style.display = tabName === 'batches' ? 'block' : 'none';
+      });
+    });
+
+    // Filters
+    document.getElementById('filterContributor').addEventListener('change', renderFiles);
+    document.getElementById('filterSearch').addEventListener('input', renderFiles);
+
+    // Image modal
+    async function openImage(key, filename, contributor, size) {
+      try {
+        const res = await fetch(`/api/dashboard/thumbnail/${encodeURIComponent(key)}`);
+        const data = await res.json();
+
+        document.getElementById('modalImage').src = data.url;
+        document.getElementById('modalFilename').textContent = filename;
+        document.getElementById('modalMeta').textContent = `${contributor.replace('_UPLOADS', '')} • ${formatSize(size)}`;
+        document.getElementById('imageModal').classList.add('visible');
+      } catch (err) {
+        console.error('Failed to load image:', err);
+      }
+    }
+
+    function closeModal() {
+      document.getElementById('imageModal').classList.remove('visible');
+    }
+
+    document.getElementById('imageModal').addEventListener('click', (e) => {
+      if (e.target.id === 'imageModal') closeModal();
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeModal();
+    });
+
+    // Helpers
+    function formatSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+    }
+
+    function formatDate(isoStr) {
+      if (!isoStr) return 'Unknown';
+      const d = new Date(isoStr);
+      return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+    }
+
+    // Init
+    loadStats();
+    loadFiles();
+    loadManifests();
+  </script>
+</body>
+</html>
