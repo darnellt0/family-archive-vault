@@ -212,6 +212,29 @@
           const chunkSize = 10 * 1024 * 1024; // 10MB
           let offset = file.offset || 0;
 
+          // Ensure we have a valid session URL before uploading
+          if (!file.sessionUrl || file.sessionUrl === "undefined") {
+            console.log("No session URL, initializing upload for", file.name);
+            try {
+              const init = await initUpload(file);
+              file.sessionUrl = init.upload_url;
+              file.uploadId = init.upload_id;
+              file.uploadStartedAt = init.upload_started_at;
+              file.offset = 0;
+              offset = 0;
+              saveSession(file, {
+                sessionUrl: file.sessionUrl,
+                uploadId: file.uploadId,
+                offset: 0,
+                uploadStartedAt: file.uploadStartedAt
+              });
+            } catch (initErr) {
+              errorEl.textContent = `Failed to initialize upload for ${file.name}: ${initErr.message}`;
+              errorEl.style.display = "block";
+              continue;
+            }
+          }
+
           try {
             while (offset < file.size) {
               const end = Math.min(offset + chunkSize, file.size);
