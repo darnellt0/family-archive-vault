@@ -1,0 +1,674 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Family Memories</title>
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --bg-card: #141414;
+      --bg-hover: #1a1a1a;
+      --border: #2a2a2a;
+      --text: #f5f5f5;
+      --text-muted: #888;
+      --accent: #e8b4b8;
+      --accent-soft: rgba(232, 180, 184, 0.1);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Georgia', serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+
+    /* Header */
+    .header {
+      text-align: center;
+      padding: 4rem 2rem 3rem;
+      background: linear-gradient(180deg, var(--bg-card) 0%, var(--bg) 100%);
+    }
+
+    .header h1 {
+      font-size: 2.5rem;
+      font-weight: 400;
+      letter-spacing: 0.1em;
+      margin-bottom: 0.5rem;
+      color: var(--accent);
+    }
+
+    .header p {
+      color: var(--text-muted);
+      font-style: italic;
+      font-size: 1.1rem;
+    }
+
+    /* Navigation */
+    .nav {
+      display: flex;
+      justify-content: center;
+      gap: 2rem;
+      padding: 1.5rem;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      background: var(--bg);
+      z-index: 100;
+    }
+
+    .nav-item {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.9rem;
+      letter-spacing: 0.05em;
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      transition: all 0.3s;
+      cursor: pointer;
+      background: none;
+      border: none;
+      font-family: inherit;
+    }
+
+    .nav-item:hover, .nav-item.active {
+      color: var(--text);
+      background: var(--accent-soft);
+    }
+
+    /* Main container */
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    /* Batch section */
+    .batch {
+      margin-bottom: 4rem;
+    }
+
+    .batch-header {
+      margin-bottom: 2rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .batch-title {
+      font-size: 1.5rem;
+      font-weight: 400;
+      color: var(--text);
+      margin-bottom: 0.5rem;
+    }
+
+    .batch-meta {
+      display: flex;
+      gap: 2rem;
+      color: var(--text-muted);
+      font-size: 0.875rem;
+    }
+
+    .batch-meta span {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .batch-notes {
+      margin-top: 1rem;
+      padding: 1rem;
+      background: var(--accent-soft);
+      border-radius: 8px;
+      font-style: italic;
+      color: var(--text-muted);
+    }
+
+    /* Photo grid - masonry-like */
+    .photo-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1rem;
+    }
+
+    .photo-card {
+      position: relative;
+      overflow: hidden;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: transform 0.3s, box-shadow 0.3s;
+    }
+
+    .photo-card:hover {
+      transform: scale(1.02);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+
+    .photo-card img {
+      width: 100%;
+      height: 250px;
+      object-fit: cover;
+      display: block;
+      background: var(--bg-card);
+    }
+
+    .photo-card .overlay {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 1rem;
+      background: linear-gradient(transparent, rgba(0,0,0,0.8));
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .photo-card:hover .overlay {
+      opacity: 1;
+    }
+
+    .photo-card .overlay p {
+      font-size: 0.75rem;
+      color: rgba(255,255,255,0.8);
+    }
+
+    /* Decade filter chips */
+    .filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      justify-content: center;
+      margin-bottom: 2rem;
+    }
+
+    .filter-chip {
+      padding: 0.5rem 1rem;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: inherit;
+      font-size: 0.875rem;
+    }
+
+    .filter-chip:hover, .filter-chip.active {
+      background: var(--accent-soft);
+      border-color: var(--accent);
+      color: var(--text);
+    }
+
+    /* Lightbox */
+    .lightbox {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.95);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 2rem;
+    }
+
+    .lightbox.visible { display: flex; }
+
+    .lightbox-content {
+      max-width: 90vw;
+      max-height: 90vh;
+      position: relative;
+    }
+
+    .lightbox img {
+      max-width: 100%;
+      max-height: 85vh;
+      object-fit: contain;
+      border-radius: 4px;
+    }
+
+    .lightbox-close {
+      position: absolute;
+      top: -50px;
+      right: 0;
+      background: none;
+      border: none;
+      color: var(--text);
+      font-size: 2rem;
+      cursor: pointer;
+      padding: 0.5rem;
+    }
+
+    .lightbox-nav {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      background: rgba(255,255,255,0.1);
+      border: none;
+      color: var(--text);
+      font-size: 2rem;
+      cursor: pointer;
+      padding: 1rem;
+      border-radius: 50%;
+      transition: background 0.2s;
+    }
+
+    .lightbox-nav:hover { background: rgba(255,255,255,0.2); }
+    .lightbox-nav.prev { left: -60px; }
+    .lightbox-nav.next { right: -60px; }
+
+    .lightbox-info {
+      text-align: center;
+      margin-top: 1rem;
+      color: var(--text-muted);
+      font-size: 0.875rem;
+    }
+
+    /* Slideshow controls */
+    .slideshow-controls {
+      position: fixed;
+      bottom: 2rem;
+      left: 50%;
+      transform: translateX(-50%);
+      display: none;
+      gap: 1rem;
+      background: var(--bg-card);
+      padding: 0.75rem 1.5rem;
+      border-radius: 30px;
+      border: 1px solid var(--border);
+    }
+
+    .lightbox.visible .slideshow-controls { display: flex; }
+
+    .slideshow-btn {
+      background: none;
+      border: none;
+      color: var(--text);
+      cursor: pointer;
+      font-size: 1.25rem;
+      padding: 0.5rem;
+      opacity: 0.7;
+      transition: opacity 0.2s;
+    }
+
+    .slideshow-btn:hover { opacity: 1; }
+    .slideshow-btn.active { color: var(--accent); opacity: 1; }
+
+    /* Loading */
+    .loading {
+      text-align: center;
+      padding: 4rem;
+      color: var(--text-muted);
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 1rem;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Empty state */
+    .empty {
+      text-align: center;
+      padding: 4rem 2rem;
+      color: var(--text-muted);
+    }
+
+    .empty h3 {
+      font-size: 1.25rem;
+      margin-bottom: 0.5rem;
+      font-weight: 400;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .header h1 { font-size: 1.75rem; }
+      .photo-grid { grid-template-columns: repeat(2, 1fr); gap: 0.5rem; }
+      .photo-card img { height: 150px; }
+      .nav { gap: 1rem; flex-wrap: wrap; }
+      .lightbox-nav { display: none; }
+      .batch-meta { flex-direction: column; gap: 0.5rem; }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <h1>Family Memories</h1>
+    <p>A collection of our cherished moments</p>
+  </header>
+
+  <nav class="nav">
+    <button class="nav-item active" data-view="all">All Photos</button>
+    <button class="nav-item" data-view="decades">By Decade</button>
+    <button class="nav-item" data-view="recent">Recent Uploads</button>
+    <a href="/register" class="nav-item">Add Photos</a>
+  </nav>
+
+  <div class="container">
+    <div id="filters" class="filters" style="display: none;"></div>
+    <div id="content">
+      <div class="loading">
+        <div class="spinner"></div>
+        <p>Loading memories...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lightbox -->
+  <div class="lightbox" id="lightbox">
+    <div class="lightbox-content">
+      <button class="lightbox-close" onclick="closeLightbox()">&times;</button>
+      <button class="lightbox-nav prev" onclick="prevPhoto()">&#8249;</button>
+      <img id="lightboxImage" src="" alt="">
+      <button class="lightbox-nav next" onclick="nextPhoto()">&#8250;</button>
+      <div class="lightbox-info" id="lightboxInfo"></div>
+    </div>
+    <div class="slideshow-controls">
+      <button class="slideshow-btn" id="playBtn" onclick="toggleSlideshow()" title="Play slideshow">&#9658;</button>
+      <span style="color: var(--text-muted); font-size: 0.875rem;" id="photoCounter">1 / 10</span>
+    </div>
+  </div>
+
+  <script>
+    let allBatches = [];
+    let allPhotos = [];
+    let currentPhotoIndex = 0;
+    let slideshowInterval = null;
+    let currentView = 'all';
+    let currentDecadeFilter = null;
+
+    // Load photos
+    async function loadPhotos() {
+      try {
+        const res = await fetch('/api/gallery/photos');
+        const data = await res.json();
+
+        allBatches = data.batches;
+
+        // Flatten all photos for slideshow
+        allPhotos = [];
+        allBatches.forEach(batch => {
+          batch.files.forEach(file => {
+            allPhotos.push({
+              ...file,
+              batch: batch,
+            });
+          });
+        });
+
+        // Add orphaned files
+        data.orphaned_files.forEach(file => {
+          allPhotos.push({
+            ...file,
+            batch: { contributor: file.contributor, notes: '', decade: '' },
+          });
+        });
+
+        renderView();
+        setupDecadeFilters();
+
+      } catch (err) {
+        console.error('Failed to load photos:', err);
+        document.getElementById('content').innerHTML = `
+          <div class="empty">
+            <h3>Unable to load photos</h3>
+            <p>Please try again later</p>
+          </div>
+        `;
+      }
+    }
+
+    // Setup decade filters
+    function setupDecadeFilters() {
+      const decades = new Set();
+      allBatches.forEach(b => {
+        if (b.decade) decades.add(b.decade);
+      });
+
+      if (decades.size === 0) return;
+
+      const sorted = Array.from(decades).sort();
+      const html = `
+        <button class="filter-chip active" data-decade="">All Decades</button>
+        ${sorted.map(d => `<button class="filter-chip" data-decade="${d}">${d}</button>`).join('')}
+      `;
+
+      document.getElementById('filters').innerHTML = html;
+
+      document.querySelectorAll('.filter-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+          document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+          chip.classList.add('active');
+          currentDecadeFilter = chip.dataset.decade || null;
+          renderView();
+        });
+      });
+    }
+
+    // Render current view
+    function renderView() {
+      let batches = allBatches;
+
+      // Apply decade filter
+      if (currentDecadeFilter) {
+        batches = batches.filter(b => b.decade === currentDecadeFilter);
+      }
+
+      // Show/hide decade filters
+      document.getElementById('filters').style.display =
+        currentView === 'decades' ? 'flex' : 'none';
+
+      if (batches.length === 0 && allPhotos.length === 0) {
+        document.getElementById('content').innerHTML = `
+          <div class="empty">
+            <h3>No photos yet</h3>
+            <p>Be the first to share some family memories!</p>
+            <a href="/register" style="color: var(--accent); margin-top: 1rem; display: inline-block;">Upload Photos</a>
+          </div>
+        `;
+        return;
+      }
+
+      if (currentView === 'recent') {
+        renderRecentView();
+      } else {
+        renderBatchesView(batches);
+      }
+    }
+
+    // Render batches view
+    function renderBatchesView(batches) {
+      const html = batches.map(batch => `
+        <div class="batch">
+          <div class="batch-header">
+            <h2 class="batch-title">
+              ${batch.notes || batch.event || 'Family Photos'}
+              ${batch.decade ? ` - ${batch.decade}` : ''}
+            </h2>
+            <div class="batch-meta">
+              <span>Shared by ${batch.contributor}</span>
+              <span>${formatDate(batch.date)}</span>
+              <span>${batch.file_count} photo${batch.file_count !== 1 ? 's' : ''}</span>
+            </div>
+          </div>
+          <div class="photo-grid">
+            ${batch.files.map((file, idx) => `
+              <div class="photo-card" onclick="openLightbox('${file.key}', ${allPhotos.findIndex(p => p.key === file.key)})">
+                <img src="" data-key="${file.key}" alt="${file.name}" loading="lazy">
+                <div class="overlay">
+                  <p>${file.name}</p>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `).join('');
+
+      document.getElementById('content').innerHTML = html;
+      loadVisibleImages();
+    }
+
+    // Render recent uploads (flat grid)
+    function renderRecentView() {
+      const recent = [...allPhotos].slice(0, 50); // Last 50 photos
+
+      const html = `
+        <div class="batch">
+          <div class="batch-header">
+            <h2 class="batch-title">Recent Uploads</h2>
+            <div class="batch-meta">
+              <span>${recent.length} photos</span>
+            </div>
+          </div>
+          <div class="photo-grid">
+            ${recent.map((photo, idx) => `
+              <div class="photo-card" onclick="openLightbox('${photo.key}', ${idx})">
+                <img src="" data-key="${photo.key}" alt="${photo.name}" loading="lazy">
+                <div class="overlay">
+                  <p>${photo.name}</p>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+
+      document.getElementById('content').innerHTML = html;
+      loadVisibleImages();
+    }
+
+    // Load images lazily
+    async function loadVisibleImages() {
+      const images = document.querySelectorAll('.photo-card img[data-key]');
+
+      images.forEach(async img => {
+        const key = img.dataset.key;
+        try {
+          const res = await fetch(`/api/gallery/image/${encodeURIComponent(key)}`);
+          const data = await res.json();
+          img.src = data.url;
+        } catch (err) {
+          img.style.background = 'var(--bg-card)';
+        }
+      });
+    }
+
+    // Lightbox functions
+    async function openLightbox(key, index) {
+      currentPhotoIndex = index;
+      await loadLightboxImage(key);
+      document.getElementById('lightbox').classList.add('visible');
+      document.body.style.overflow = 'hidden';
+      updatePhotoCounter();
+    }
+
+    async function loadLightboxImage(key) {
+      const img = document.getElementById('lightboxImage');
+      img.style.opacity = '0.5';
+
+      try {
+        const res = await fetch(`/api/gallery/image/${encodeURIComponent(key)}`);
+        const data = await res.json();
+        img.src = data.url;
+        img.style.opacity = '1';
+
+        const photo = allPhotos[currentPhotoIndex];
+        if (photo && photo.batch) {
+          document.getElementById('lightboxInfo').textContent =
+            `${photo.batch.contributor}${photo.batch.decade ? ' - ' + photo.batch.decade : ''}`;
+        }
+      } catch (err) {
+        console.error('Failed to load image:', err);
+      }
+    }
+
+    function closeLightbox() {
+      document.getElementById('lightbox').classList.remove('visible');
+      document.body.style.overflow = '';
+      stopSlideshow();
+    }
+
+    function prevPhoto() {
+      currentPhotoIndex = (currentPhotoIndex - 1 + allPhotos.length) % allPhotos.length;
+      loadLightboxImage(allPhotos[currentPhotoIndex].key);
+      updatePhotoCounter();
+    }
+
+    function nextPhoto() {
+      currentPhotoIndex = (currentPhotoIndex + 1) % allPhotos.length;
+      loadLightboxImage(allPhotos[currentPhotoIndex].key);
+      updatePhotoCounter();
+    }
+
+    function updatePhotoCounter() {
+      document.getElementById('photoCounter').textContent =
+        `${currentPhotoIndex + 1} / ${allPhotos.length}`;
+    }
+
+    // Slideshow
+    function toggleSlideshow() {
+      if (slideshowInterval) {
+        stopSlideshow();
+      } else {
+        startSlideshow();
+      }
+    }
+
+    function startSlideshow() {
+      document.getElementById('playBtn').innerHTML = '&#10074;&#10074;';
+      document.getElementById('playBtn').classList.add('active');
+      slideshowInterval = setInterval(nextPhoto, 4000);
+    }
+
+    function stopSlideshow() {
+      document.getElementById('playBtn').innerHTML = '&#9658;';
+      document.getElementById('playBtn').classList.remove('active');
+      if (slideshowInterval) {
+        clearInterval(slideshowInterval);
+        slideshowInterval = null;
+      }
+    }
+
+    // Keyboard navigation
+    document.addEventListener('keydown', (e) => {
+      if (!document.getElementById('lightbox').classList.contains('visible')) return;
+
+      if (e.key === 'Escape') closeLightbox();
+      if (e.key === 'ArrowLeft') prevPhoto();
+      if (e.key === 'ArrowRight') nextPhoto();
+      if (e.key === ' ') { e.preventDefault(); toggleSlideshow(); }
+    });
+
+    // View switching
+    document.querySelectorAll('.nav-item[data-view]').forEach(item => {
+      item.addEventListener('click', () => {
+        document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+        item.classList.add('active');
+        currentView = item.dataset.view;
+        currentDecadeFilter = null;
+        renderView();
+      });
+    });
+
+    // Helpers
+    function formatDate(isoStr) {
+      if (!isoStr) return '';
+      const d = new Date(isoStr);
+      return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    }
+
+    // Init
+    loadPhotos();
+  </script>
+</body>
+</html>

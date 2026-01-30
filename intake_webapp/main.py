@@ -960,3 +960,148 @@ async def api_dashboard_stats(request: Request):
     except Exception as e:
         print(f"[STATS ERROR] {type(e).__name__}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Family Gallery Endpoints ---
+
+def verify_gallery_access(request: Request) -> bool:
+    """Check if user has gallery access via cookie (using family code)."""
+    if not FAMILY_CODE:
+        return True  # No family code set, allow access
+    auth_cookie = request.cookies.get("gallery_auth")
+    expected = hashlib.sha256(FAMILY_CODE.encode()).hexdigest()[:32]
+    return auth_cookie == expected
+
+
+@app.get("/gallery", response_class=HTMLResponse)
+def gallery_page(request: Request):
+    """Family photo gallery - beautiful viewing experience."""
+    if not verify_gallery_access(request):
+        return RedirectResponse(url="/gallery/login", status_code=302)
+    return TEMPLATES.TemplateResponse("gallery.html", {"request": request})
+
+
+@app.get("/gallery/login", response_class=HTMLResponse)
+def gallery_login_page(request: Request):
+    """Gallery login page."""
+    if not FAMILY_CODE:
+        return RedirectResponse(url="/gallery", status_code=302)
+    return TEMPLATES.TemplateResponse("gallery_login.html", {"request": request})
+
+
+@app.post("/gallery/login")
+async def gallery_login(request: Request):
+    """Handle gallery login with family code."""
+    form = await request.form()
+    code = form.get("family_code", "")
+
+    if secrets.compare_digest(code, FAMILY_CODE):
+        response = RedirectResponse(url="/gallery", status_code=302)
+        auth_hash = hashlib.sha256(FAMILY_CODE.encode()).hexdigest()[:32]
+        response.set_cookie("gallery_auth", auth_hash, max_age=86400 * 30)  # 30 days
+        return response
+
+    return TEMPLATES.TemplateResponse(
+        "gallery_login.html",
+        {"request": request, "error": "Invalid family code"}
+    )
+
+
+@app.get("/api/gallery/photos")
+async def api_gallery_photos(request: Request):
+    """Get all photos for the gallery, organized by batch/event."""
+    if not verify_gallery_access(request):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    try:
+        s3 = get_r2_client()
+
+        # Get all manifests to understand the batches
+        manifest_resp = s3.list_objects_v2(Bucket=R2_BUCKET_NAME, Prefix='_manifests/')
+
+        batches = []
+        all_files_in_batches = set()
+
+        for obj in manifest_resp.get('Contents', []):
+            key = obj['Key']
+            if not key.endswith('.json'):
+                continue
+
+            manifest_obj = s3.get_object(Bucket=R2_BUCKET_NAME, Key=key)
+            manifest = json.loads(manifest_obj['Body'].read().decode('utf-8'))
+
+            # Get files for this batch
+            batch_files = []
+            for f in manifest.get('files', []):
+                object_key = f.get('object_key', '')
+                if object_key:
+                    all_files_in_batches.add(object_key)
+                    batch_files.append({
+                        "key": object_key,
+                        "name": f.get('original_name', ''),
+                        "size": f.get('size', 0),
+                    })
+
+            batches.append({
+                "id": manifest.get('batch_id', ''),
+                "contributor": manifest.get('contributor_display_name', 'Unknown'),
+                "date": manifest.get('created_at', ''),
+                "decade": manifest.get('decade', ''),
+                "notes": manifest.get('notes', ''),
+                "event": manifest.get('event', ''),
+                "files": batch_files,
+                "file_count": len(batch_files),
+            })
+
+        # Sort batches by date (newest first)
+        batches.sort(key=lambda x: x['date'], reverse=True)
+
+        # Also get any files not in manifests (orphaned files)
+        paginator = s3.get_paginator('list_objects_v2')
+        orphaned = []
+
+        for page in paginator.paginate(Bucket=R2_BUCKET_NAME):
+            for obj in page.get('Contents', []):
+                key = obj['Key']
+                if key.startswith('_manifests/'):
+                    continue
+                if key not in all_files_in_batches:
+                    parts = key.split('/')
+                    orphaned.append({
+                        "key": key,
+                        "name": parts[-1] if parts else key,
+                        "size": obj['Size'],
+                        "contributor": parts[0].replace('_UPLOADS', '') if len(parts) > 1 else 'Unknown',
+                    })
+
+        return {
+            "batches": batches,
+            "orphaned_files": orphaned,
+            "total_batches": len(batches),
+        }
+
+    except Exception as e:
+        print(f"[GALLERY ERROR] {type(e).__name__}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/gallery/image/{file_key:path}")
+async def api_gallery_image(request: Request, file_key: str):
+    """Generate a presigned URL for viewing an image in the gallery."""
+    if not verify_gallery_access(request):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    try:
+        s3 = get_r2_client()
+
+        url = s3.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': R2_BUCKET_NAME, 'Key': file_key},
+            ExpiresIn=3600,
+        )
+
+        return {"url": url}
+
+    except Exception as e:
+        print(f"[GALLERY IMAGE ERROR] {type(e).__name__}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
