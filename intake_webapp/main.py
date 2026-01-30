@@ -317,13 +317,20 @@ def find_folder(service, parent_id: str, name: str) -> Optional[str]:
     Unlike ensure_folder, this does NOT create the folder if missing.
     This is important because service accounts cannot create folders
     (they have no storage quota).
+
+    Uses supportsAllDrives/includeItemsFromAllDrives for Shared Drive support.
     """
     safe_name = name.replace("'", "\\'")
     query = (
         f"name='{safe_name}' and '{parent_id}' in parents and "
         "mimeType='application/vnd.google-apps.folder' and trashed=false"
     )
-    result = service.files().list(q=query, fields="files(id, name)").execute()
+    result = service.files().list(
+        q=query,
+        fields="files(id, name)",
+        supportsAllDrives=True,
+        includeItemsFromAllDrives=True
+    ).execute()
     files = result.get("files", [])
     if files:
         return files[0]["id"]
@@ -378,8 +385,14 @@ def authorized_session():
 
 
 def start_resumable_session(file_name: str, mime_type: str, parent_id: str, size_bytes: int | None) -> str:
+    """Start a resumable upload session.
+
+    Uses supportsAllDrives=True to support Shared Drives, which is required
+    for service accounts (they have no storage quota in regular Drive).
+    """
     session = authorized_session()
-    url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable"
+    # Add supportsAllDrives=true for Shared Drive support
+    url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true"
     headers = {"X-Upload-Content-Type": mime_type}
     if size_bytes:
         headers["X-Upload-Content-Length"] = str(size_bytes)
