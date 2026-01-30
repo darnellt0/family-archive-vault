@@ -311,15 +311,66 @@ def ensure_folder(service, parent_id: str, name: str) -> str:
     return folder["id"]
 
 
+def find_folder(service, parent_id: str, name: str) -> Optional[str]:
+    """Find an existing folder by name. Returns None if not found.
+
+    Unlike ensure_folder, this does NOT create the folder if missing.
+    This is important because service accounts cannot create folders
+    (they have no storage quota).
+    """
+    safe_name = name.replace("'", "\\'")
+    query = (
+        f"name='{safe_name}' and '{parent_id}' in parents and "
+        "mimeType='application/vnd.google-apps.folder' and trashed=false"
+    )
+    result = service.files().list(q=query, fields="files(id, name)").execute()
+    files = result.get("files", [])
+    if files:
+        return files[0]["id"]
+    return None
+
+
 def ensure_schema(service):
-    inbox = ensure_folder(service, DRIVE_ROOT_FOLDER_ID, "INBOX_UPLOADS")
-    manifests = ensure_folder(service, inbox, "_MANIFESTS")
+    """Find required folders in Drive.
+
+    IMPORTANT: Both INBOX_UPLOADS and _MANIFESTS folders must be created
+    manually by a user (not service account) in the Family_Archive folder.
+    The service account should have Editor access to both folders.
+    Service accounts cannot create folders (no storage quota).
+    """
+    # Find INBOX_UPLOADS (must exist - created manually by user)
+    inbox = find_folder(service, DRIVE_ROOT_FOLDER_ID, "INBOX_UPLOADS")
+    if not inbox:
+        raise RuntimeError(
+            "INBOX_UPLOADS folder not found. Please create it manually in Google Drive "
+            "and share it with the service account."
+        )
+
+    # Find _MANIFESTS folder (must exist - created manually by user)
+    # Put at root level for simplicity
+    manifests = find_folder(service, DRIVE_ROOT_FOLDER_ID, "_MANIFESTS")
+    if not manifests:
+        # If _MANIFESTS doesn't exist, we can skip manifest tracking
+        # or raise an error. For now, let's use INBOX_UPLOADS as fallback
+        # and prefix manifest files to distinguish them
+        print("[WARNING] _MANIFESTS folder not found, using INBOX_UPLOADS for manifests")
+        manifests = inbox
+
     return {"INBOX_UPLOADS": inbox, "MANIFESTS": manifests}
 
 
 def contributor_folder_id(service, folder_name: str) -> str:
+    """Get folder for contributor uploads.
+
+    Note: We upload directly to INBOX_UPLOADS to avoid quota issues.
+    Service accounts cannot create folders (no storage quota), so we
+    skip creating per-contributor subfolders. Files are prefixed with
+    contributor name instead.
+    """
     schema = ensure_schema(service)
-    return ensure_folder(service, schema["INBOX_UPLOADS"], folder_name)
+    # Return INBOX_UPLOADS directly - don't create subfolders
+    # This avoids the "Service Accounts do not have storage quota" error
+    return schema["INBOX_UPLOADS"]
 
 
 def authorized_session():
@@ -553,7 +604,10 @@ async def api_upload_init(payload: Dict[str, Any]):
         folder_id = contributor_folder_id(service, info["folder_name"])
         print(f"[INIT] Folder ID: {folder_id}")
 
-        session_url = start_resumable_session(filename, mime_type, folder_id, size_bytes)
+        # Prefix filename with contributor name to identify who uploaded it
+        # (since we're uploading to shared INBOX_UPLOADS instead of per-user folders)
+        prefixed_filename = f"{info['folder_name']}_{filename}"
+        session_url = start_resumable_session(prefixed_filename, mime_type, folder_id, size_bytes)
         print(f"[INIT] Session URL: {session_url[:100]}...")
     except Exception as e:
         print(f"[INIT ERROR] {type(e).__name__}: {str(e)}")
