@@ -5,6 +5,7 @@ import secrets
 import smtplib
 import sqlite3
 import time
+import hashlib
 from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -14,11 +15,8 @@ from typing import Dict, Any, List, Optional
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
-from google.auth.transport.requests import AuthorizedSession
-import io
+import boto3
+from botocore.config import Config
 import uuid
 
 app = FastAPI()
@@ -26,15 +24,15 @@ app = FastAPI()
 BASE_DIR = Path(__file__).parent
 TEMPLATES = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
-TOKEN_MAP_PATH = Path(os.getenv("INTAKE_TOKEN_MAP_PATH", str(BASE_DIR / "token_map.json")))
-DRIVE_ROOT_FOLDER_ID = os.getenv("DRIVE_ROOT_FOLDER_ID")
-SERVICE_ACCOUNT_JSON_PATH = os.getenv("SERVICE_ACCOUNT_JSON_PATH")
-SERVICE_ACCOUNT_JSON = os.getenv("SERVICE_ACCOUNT_JSON")
+# Cloudflare R2 Configuration
+R2_ACCOUNT_ID = os.getenv("R2_ACCOUNT_ID")
+R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID")
+R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY")
+R2_BUCKET_NAME = os.getenv("R2_BUCKET_NAME", "family-archive-uploads")
 
 MAX_FILE_SIZE_BYTES = int(os.getenv("MAX_FILE_SIZE_BYTES", str(25 * 1024 * 1024 * 1024)))
 MAX_FILES_PER_BATCH = int(os.getenv("MAX_FILES_PER_BATCH", "100"))
 RATE_LIMIT_PER_MIN = int(os.getenv("RATE_LIMIT_PER_MIN", "120"))
-SESSION_STORE_PATH = Path(os.getenv("UPLOAD_SESSION_STORE", str(BASE_DIR / "upload_sessions.json")))
 
 # Self-registration configuration
 FAMILY_CODE = os.getenv("FAMILY_CODE", "")  # Required for registration
@@ -47,7 +45,23 @@ SMTP_FROM = os.getenv("SMTP_FROM", "Family Archive <noreply@familyarchive.local>
 BASE_URL = os.getenv("BASE_URL", "http://localhost:8080")  # For verification links
 
 _RATE_LIMIT = {}
-_SESSIONS = {}
+_UPLOAD_SESSIONS = {}  # Track multipart uploads
+
+
+# --- R2 Client Setup ---
+
+def get_r2_client():
+    """Get a boto3 S3 client configured for Cloudflare R2."""
+    return boto3.client(
+        "s3",
+        endpoint_url=f"https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
+        aws_access_key_id=R2_ACCESS_KEY_ID,
+        aws_secret_access_key=R2_SECRET_ACCESS_KEY,
+        config=Config(
+            signature_version="s3v4",
+            retries={"max_attempts": 3, "mode": "standard"}
+        ),
+    )
 
 
 # --- Database Setup for Self-Registration ---
@@ -76,6 +90,13 @@ def init_contributors_db():
             verified_at TEXT
         )
     ''')
+    # Track upload counts locally
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS upload_counts (
+            token TEXT PRIMARY KEY,
+            count INTEGER DEFAULT 0
+        )
+    ''')
     conn.commit()
     conn.close()
 
@@ -85,8 +106,7 @@ init_contributors_db()
 
 
 def get_contributor_by_token(token: str) -> Optional[Dict[str, Any]]:
-    """Look up contributor by upload token - checks DB first, then JSON fallback."""
-    # First check database
+    """Look up contributor by upload token."""
     conn = get_contributors_db()
     row = conn.execute(
         "SELECT * FROM contributors WHERE token = ? AND status = 'active'",
@@ -100,10 +120,7 @@ def get_contributor_by_token(token: str) -> Optional[Dict[str, Any]]:
             "folder_name": row["folder_name"],
             "email": row["email"],
         }
-
-    # Fallback to JSON token map for backwards compatibility
-    token_map = load_token_map()
-    return token_map.get(token)
+    return None
 
 
 def get_contributor_by_email(email: str) -> Optional[Dict[str, Any]]:
@@ -168,6 +185,26 @@ def verify_contributor(verification_token: str) -> Optional[Dict[str, Any]]:
         "display_name": row["display_name"],
         "email": row["email"],
     }
+
+
+def update_upload_count(token: str, increment: int) -> int:
+    """Update and return the upload count for a contributor."""
+    conn = get_contributors_db()
+
+    # Get current count
+    row = conn.execute("SELECT count FROM upload_counts WHERE token = ?", (token,)).fetchone()
+    current = row["count"] if row else 0
+    new_count = current + increment
+
+    # Upsert the count
+    conn.execute('''
+        INSERT INTO upload_counts (token, count) VALUES (?, ?)
+        ON CONFLICT(token) DO UPDATE SET count = ?
+    ''', (token, new_count, new_count))
+    conn.commit()
+    conn.close()
+
+    return new_count
 
 
 def send_verification_email(email: str, display_name: str, verification_token: str) -> bool:
@@ -245,233 +282,10 @@ async def rate_limit_middleware(request: Request, call_next):
     _RATE_LIMIT[ip] = window
     return await call_next(request)
 
+
 # Startup validation
-if not DRIVE_ROOT_FOLDER_ID:
-    raise RuntimeError("DRIVE_ROOT_FOLDER_ID is required")
-
-if not SERVICE_ACCOUNT_JSON and not SERVICE_ACCOUNT_JSON_PATH:
-    raise RuntimeError("SERVICE_ACCOUNT_JSON or SERVICE_ACCOUNT_JSON_PATH is required")
-
-
-def load_token_map() -> Dict[str, Dict[str, str]]:
-    if not TOKEN_MAP_PATH.exists():
-        return {}
-    return json.loads(TOKEN_MAP_PATH.read_text(encoding="utf-8"))
-
-
-def get_credentials():
-    if SERVICE_ACCOUNT_JSON:
-        data = json.loads(SERVICE_ACCOUNT_JSON)
-        return service_account.Credentials.from_service_account_info(
-            data,
-            scopes=["https://www.googleapis.com/auth/drive"],
-        )
-    if SERVICE_ACCOUNT_JSON_PATH:
-        return service_account.Credentials.from_service_account_file(
-            SERVICE_ACCOUNT_JSON_PATH,
-            scopes=["https://www.googleapis.com/auth/drive"],
-        )
-    raise RuntimeError("SERVICE_ACCOUNT_JSON_PATH or SERVICE_ACCOUNT_JSON required")
-
-
-def drive_service():
-    return build("drive", "v3", credentials=get_credentials())
-
-
-def load_sessions() -> Dict[str, dict]:
-    # Resumable upload sessions are stored locally so we can recover after restarts.
-    if SESSION_STORE_PATH.exists():
-        try:
-            return json.loads(SESSION_STORE_PATH.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
-    return {}
-
-
-def save_sessions():
-    # Persist the resumable session map to disk (Cloud Run ephemeral but useful for short restarts).
-    SESSION_STORE_PATH.write_text(json.dumps(_SESSIONS, indent=2), encoding="utf-8")
-
-
-def ensure_folder(service, parent_id: str, name: str) -> str:
-    # Escape single quotes in folder name to prevent query injection
-    safe_name = name.replace("'", "\\'")
-    query = (
-        f"name='{safe_name}' and '{parent_id}' in parents and "
-        "mimeType='application/vnd.google-apps.folder' and trashed=false"
-    )
-    result = service.files().list(q=query, fields="files(id, name)").execute()
-    files = result.get("files", [])
-    if files:
-        return files[0]["id"]
-    folder = service.files().create(
-        body={"name": name, "mimeType": "application/vnd.google-apps.folder", "parents": [parent_id]},
-        fields="id",
-    ).execute()
-    return folder["id"]
-
-
-def find_folder(service, parent_id: str, name: str) -> Optional[str]:
-    """Find an existing folder by name. Returns None if not found.
-
-    Unlike ensure_folder, this does NOT create the folder if missing.
-    This is important because service accounts cannot create folders
-    (they have no storage quota).
-
-    Uses supportsAllDrives/includeItemsFromAllDrives for Shared Drive support.
-    """
-    safe_name = name.replace("'", "\\'")
-    query = (
-        f"name='{safe_name}' and '{parent_id}' in parents and "
-        "mimeType='application/vnd.google-apps.folder' and trashed=false"
-    )
-    result = service.files().list(
-        q=query,
-        fields="files(id, name)",
-        supportsAllDrives=True,
-        includeItemsFromAllDrives=True
-    ).execute()
-    files = result.get("files", [])
-    if files:
-        return files[0]["id"]
-    return None
-
-
-def ensure_schema(service):
-    """Find required folders in Drive.
-
-    IMPORTANT: Both INBOX_UPLOADS and _MANIFESTS folders must be created
-    manually by a user (not service account) in the Family_Archive folder.
-    The service account should have Editor access to both folders.
-    Service accounts cannot create folders (no storage quota).
-    """
-    # Find INBOX_UPLOADS (must exist - created manually by user)
-    inbox = find_folder(service, DRIVE_ROOT_FOLDER_ID, "INBOX_UPLOADS")
-    if not inbox:
-        raise RuntimeError(
-            "INBOX_UPLOADS folder not found. Please create it manually in Google Drive "
-            "and share it with the service account."
-        )
-
-    # Find _MANIFESTS folder (must exist - created manually by user)
-    # Put at root level for simplicity
-    manifests = find_folder(service, DRIVE_ROOT_FOLDER_ID, "_MANIFESTS")
-    if not manifests:
-        # If _MANIFESTS doesn't exist, we can skip manifest tracking
-        # or raise an error. For now, let's use INBOX_UPLOADS as fallback
-        # and prefix manifest files to distinguish them
-        print("[WARNING] _MANIFESTS folder not found, using INBOX_UPLOADS for manifests")
-        manifests = inbox
-
-    return {"INBOX_UPLOADS": inbox, "MANIFESTS": manifests}
-
-
-def contributor_folder_id(service, folder_name: str) -> str:
-    """Get folder for contributor uploads.
-
-    Note: We upload directly to INBOX_UPLOADS to avoid quota issues.
-    Service accounts cannot create folders (no storage quota), so we
-    skip creating per-contributor subfolders. Files are prefixed with
-    contributor name instead.
-    """
-    schema = ensure_schema(service)
-    # Return INBOX_UPLOADS directly - don't create subfolders
-    # This avoids the "Service Accounts do not have storage quota" error
-    return schema["INBOX_UPLOADS"]
-
-
-def authorized_session():
-    return AuthorizedSession(get_credentials())
-
-
-def start_resumable_session(file_name: str, mime_type: str, parent_id: str, size_bytes: int | None) -> str:
-    """Start a resumable upload session.
-
-    Uses supportsAllDrives=True to support Shared Drives, which is required
-    for service accounts (they have no storage quota in regular Drive).
-    """
-    session = authorized_session()
-    # Add supportsAllDrives=true for Shared Drive support
-    url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true"
-    headers = {"X-Upload-Content-Type": mime_type}
-    if size_bytes:
-        headers["X-Upload-Content-Length"] = str(size_bytes)
-    body = {"name": file_name, "parents": [parent_id]}
-    resp = session.post(url, headers=headers, json=body)
-    if resp.status_code not in (200, 201):
-        raise HTTPException(status_code=500, detail=f"Failed to start session: {resp.text}")
-    session_url = resp.headers.get("Location")
-    if not session_url:
-        raise HTTPException(status_code=500, detail="No resumable session URL returned")
-    return session_url
-
-
-def upload_chunk(session_url: str, chunk: bytes, content_range: str, content_type: str):
-    session = authorized_session()
-    headers = {
-        "Content-Type": content_type,
-        "Content-Range": content_range,
-    }
-    try:
-        resp = session.put(session_url, headers=headers, data=chunk, timeout=60)
-        if resp.status_code >= 400:
-            print(f"[UPLOAD ERROR] Status {resp.status_code}: {resp.text[:500]}")
-        return resp
-    except Exception as e:
-        print(f"[UPLOAD EXCEPTION] {type(e).__name__}: {str(e)}")
-        raise
-
-
-def query_upload_status(session_url: str, total_size: int) -> int:
-    """Ask Drive how many bytes it has received for this resumable session.
-
-    This is critical for recovery if the client offset and server offset diverge.
-    """
-    session = authorized_session()
-    headers = {"Content-Range": f"bytes */{total_size}"}
-    resp = session.put(session_url, headers=headers)
-    if resp.status_code == 308:
-        range_header = resp.headers.get("Range", "")
-        if range_header.startswith("bytes="):
-            end = int(range_header.split("-")[-1])
-            return end + 1
-    return 0
-
-
-def update_counter(service, token: str, increment: int) -> int:
-    schema = ensure_schema(service)
-    counter_name = f"counter_{token}.json"
-
-    query = (
-        f"name='{counter_name}' and '{schema['MANIFESTS']}' in parents "
-        "and trashed=false"
-    )
-    result = service.files().list(q=query, fields="files(id, name)").execute()
-    files = result.get("files", [])
-    current = 0
-    file_id = None
-    if files:
-        file_id = files[0]["id"]
-        content = service.files().get_media(fileId=file_id).execute()
-        try:
-            current = json.loads(content.decode("utf-8")).get("count", 0)
-        except Exception:
-            current = 0
-
-    new_count = current + increment
-    data = json.dumps({"count": new_count}).encode("utf-8")
-    media = MediaIoBaseUpload(io.BytesIO(data), mimetype="application/json", resumable=False)
-
-    if file_id:
-        service.files().update(fileId=file_id, media_body=media).execute()
-    else:
-        service.files().create(
-            body={"name": counter_name, "parents": [schema["MANIFESTS"]]},
-            media_body=media,
-            fields="id",
-        ).execute()
-
-    return new_count
+if not R2_ACCOUNT_ID or not R2_ACCESS_KEY_ID or not R2_SECRET_ACCESS_KEY:
+    print("[WARNING] R2 credentials not configured. Set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY")
 
 
 # --- Root Redirect ---
@@ -589,12 +403,13 @@ async def api_batch_create(payload: Dict[str, Any]):
     if not info:
         raise HTTPException(status_code=404, detail="Invalid token")
 
-    batch_id = f"batch_{int(time.time())}_{token}"
+    batch_id = f"batch_{int(time.time())}_{token[:8]}"
     return {"batch_id": batch_id, "created_at": datetime.utcnow().isoformat()}
 
 
 @app.post("/api/upload/init")
 async def api_upload_init(payload: Dict[str, Any]):
+    """Initialize an upload - returns a presigned URL for direct upload to R2."""
     token = payload.get("token")
     batch_id = payload.get("batch_id")
     filename = payload.get("filename")
@@ -613,109 +428,248 @@ async def api_upload_init(payload: Dict[str, Any]):
     print(f"[INIT] Contributor: {info['display_name']}, folder: {info['folder_name']}")
 
     try:
-        service = drive_service()
-        folder_id = contributor_folder_id(service, info["folder_name"])
-        print(f"[INIT] Folder ID: {folder_id}")
+        s3 = get_r2_client()
 
-        # Prefix filename with contributor name to identify who uploaded it
-        # (since we're uploading to shared INBOX_UPLOADS instead of per-user folders)
-        prefixed_filename = f"{info['folder_name']}_{filename}"
-        session_url = start_resumable_session(prefixed_filename, mime_type, folder_id, size_bytes)
-        print(f"[INIT] Session URL: {session_url[:100]}...")
+        # Create object key with contributor prefix and timestamp
+        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        safe_filename = re.sub(r'[^a-zA-Z0-9._-]', '_', filename)
+        object_key = f"{info['folder_name']}/{timestamp}_{safe_filename}"
+
+        print(f"[INIT] Object key: {object_key}")
+
+        # For files larger than 5MB, use multipart upload
+        if size_bytes > 5 * 1024 * 1024:
+            # Start multipart upload
+            response = s3.create_multipart_upload(
+                Bucket=R2_BUCKET_NAME,
+                Key=object_key,
+                ContentType=mime_type,
+            )
+            upload_id = response["UploadId"]
+
+            # Store session info
+            session_id = str(uuid.uuid4())
+            _UPLOAD_SESSIONS[session_id] = {
+                "upload_id": upload_id,
+                "object_key": object_key,
+                "size_bytes": size_bytes,
+                "parts": [],
+                "created_at": datetime.utcnow().isoformat(),
+            }
+
+            print(f"[INIT] Multipart upload started: {upload_id}")
+
+            return {
+                "batch_id": batch_id,
+                "upload_id": session_id,
+                "upload_type": "multipart",
+                "object_key": object_key,
+                "upload_started_at": datetime.utcnow().isoformat(),
+            }
+        else:
+            # For smaller files, generate a presigned PUT URL
+            presigned_url = s3.generate_presigned_url(
+                "put_object",
+                Params={
+                    "Bucket": R2_BUCKET_NAME,
+                    "Key": object_key,
+                    "ContentType": mime_type,
+                },
+                ExpiresIn=3600,  # 1 hour
+            )
+
+            print(f"[INIT] Presigned URL generated for direct upload")
+
+            return {
+                "batch_id": batch_id,
+                "upload_id": str(uuid.uuid4()),
+                "upload_url": presigned_url,
+                "upload_type": "direct",
+                "object_key": object_key,
+                "upload_started_at": datetime.utcnow().isoformat(),
+            }
+
     except Exception as e:
         print(f"[INIT ERROR] {type(e).__name__}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to initialize upload: {str(e)}")
 
-    upload_id = str(uuid.uuid4())
-    _SESSIONS.update(load_sessions())
-    _SESSIONS[upload_id] = {
-        "session_url": session_url,
-        "size_bytes": size_bytes,
-        "offset": 0,
-        "updated_at": datetime.utcnow().isoformat(),
-    }
-    save_sessions()
 
-    response = {
-        "batch_id": batch_id,
-        "upload_id": upload_id,
-        "upload_url": session_url,
-        "upload_started_at": datetime.utcnow().isoformat(),
-    }
-    print(f"[INIT] Returning: upload_id={upload_id}, url_present={bool(session_url)}")
-    return response
+@app.post("/api/upload/get-part-url")
+async def api_get_part_url(payload: Dict[str, Any]):
+    """Get a presigned URL for uploading a part of a multipart upload."""
+    session_id = payload.get("upload_id")
+    part_number = int(payload.get("part_number", 1))
+
+    if session_id not in _UPLOAD_SESSIONS:
+        raise HTTPException(status_code=404, detail="Upload session not found")
+
+    session = _UPLOAD_SESSIONS[session_id]
+
+    try:
+        s3 = get_r2_client()
+
+        presigned_url = s3.generate_presigned_url(
+            "upload_part",
+            Params={
+                "Bucket": R2_BUCKET_NAME,
+                "Key": session["object_key"],
+                "UploadId": session["upload_id"],
+                "PartNumber": part_number,
+            },
+            ExpiresIn=3600,
+        )
+
+        return {
+            "upload_url": presigned_url,
+            "part_number": part_number,
+        }
+
+    except Exception as e:
+        print(f"[PART URL ERROR] {type(e).__name__}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get part URL: {str(e)}")
+
+
+@app.post("/api/upload/complete-part")
+async def api_complete_part(payload: Dict[str, Any]):
+    """Record a completed part of a multipart upload."""
+    session_id = payload.get("upload_id")
+    part_number = int(payload.get("part_number", 1))
+    etag = payload.get("etag")
+
+    if session_id not in _UPLOAD_SESSIONS:
+        raise HTTPException(status_code=404, detail="Upload session not found")
+
+    session = _UPLOAD_SESSIONS[session_id]
+    session["parts"].append({
+        "PartNumber": part_number,
+        "ETag": etag,
+    })
+
+    return {"status": "ok", "parts_uploaded": len(session["parts"])}
+
+
+@app.post("/api/upload/complete-multipart")
+async def api_complete_multipart(payload: Dict[str, Any]):
+    """Complete a multipart upload."""
+    session_id = payload.get("upload_id")
+
+    if session_id not in _UPLOAD_SESSIONS:
+        raise HTTPException(status_code=404, detail="Upload session not found")
+
+    session = _UPLOAD_SESSIONS[session_id]
+
+    try:
+        s3 = get_r2_client()
+
+        # Sort parts by part number
+        parts = sorted(session["parts"], key=lambda p: p["PartNumber"])
+
+        response = s3.complete_multipart_upload(
+            Bucket=R2_BUCKET_NAME,
+            Key=session["object_key"],
+            UploadId=session["upload_id"],
+            MultipartUpload={"Parts": parts},
+        )
+
+        # Clean up session
+        del _UPLOAD_SESSIONS[session_id]
+
+        print(f"[COMPLETE] Multipart upload completed: {session['object_key']}")
+
+        return {
+            "status": "ok",
+            "object_key": session["object_key"],
+            "location": response.get("Location", ""),
+        }
+
+    except Exception as e:
+        print(f"[COMPLETE ERROR] {type(e).__name__}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to complete upload: {str(e)}")
 
 
 @app.put("/api/upload/chunk")
 async def api_upload_chunk(request: Request):
-    session_url = request.headers.get("X-Upload-Session-Url")
-    upload_id = request.headers.get("X-Upload-Id")
+    """Handle chunk upload - proxy to R2 for multipart uploads."""
+    session_id = request.headers.get("X-Upload-Id")
     content_range = request.headers.get("Content-Range")
     content_type = request.headers.get("Content-Type") or "application/octet-stream"
 
-    if not session_url and upload_id:
-        _SESSIONS.update(load_sessions())
-        session_url = _SESSIONS.get(upload_id, {}).get("session_url")
+    if not session_id or session_id not in _UPLOAD_SESSIONS:
+        raise HTTPException(status_code=400, detail="Invalid or missing upload session")
 
-    if not session_url or not content_range:
-        raise HTTPException(status_code=400, detail="Missing upload session or range")
+    session = _UPLOAD_SESSIONS[session_id]
 
+    # Parse content range to determine part number
+    # Format: bytes start-end/total
     try:
-        range_parts = content_range.split(" ")
-        byte_range, total = range_parts[1].split("/")
-        start, end = byte_range.split("-")
-        start = int(start)
-        total = int(total)
-    except Exception:
-        start = 0
-        total = 0
+        range_parts = content_range.split(" ")[1].split("/")
+        byte_range = range_parts[0]
+        total = int(range_parts[1])
+        start, end = map(int, byte_range.split("-"))
 
-    if total:
-        expected = None
-        if upload_id and upload_id in _SESSIONS:
-            expected = _SESSIONS[upload_id].get("offset", 0)
-        if expected is not None and start != expected:
-            # Query Drive for the latest offset to recover from mismatch.
-            next_offset = query_upload_status(session_url, total)
-            _SESSIONS[upload_id]["offset"] = next_offset
-            _SESSIONS[upload_id]["updated_at"] = datetime.utcnow().isoformat()
-            save_sessions()
-            return JSONResponse(content={"status": "resume", "next_offset": next_offset}, status_code=308)
-        if expected is None and start > 0:
-            next_offset = query_upload_status(session_url, total)
-            return JSONResponse(content={"status": "resume", "next_offset": next_offset}, status_code=308)
+        # Calculate part number (5MB chunks)
+        chunk_size = 5 * 1024 * 1024
+        part_number = (start // chunk_size) + 1
+    except Exception:
+        part_number = len(session["parts"]) + 1
 
     body = await request.body()
-    print(f"[CHUNK] Uploading {len(body)} bytes, range: {content_range}")
+    print(f"[CHUNK] Uploading part {part_number}, {len(body)} bytes")
 
     try:
-        resp = upload_chunk(session_url, body, content_range, content_type)
+        s3 = get_r2_client()
+
+        response = s3.upload_part(
+            Bucket=R2_BUCKET_NAME,
+            Key=session["object_key"],
+            UploadId=session["upload_id"],
+            PartNumber=part_number,
+            Body=body,
+        )
+
+        etag = response["ETag"]
+        session["parts"].append({
+            "PartNumber": part_number,
+            "ETag": etag,
+        })
+
+        print(f"[CHUNK] Part {part_number} uploaded, ETag: {etag}")
+
+        # Check if this is the last chunk
+        if content_range:
+            try:
+                _, total_str = content_range.split("/")
+                total = int(total_str)
+                _, end_str = content_range.split(" ")[1].split("/")[0].split("-")
+                end = int(end_str)
+
+                if end + 1 >= total:
+                    # This is the last chunk, complete the multipart upload
+                    parts = sorted(session["parts"], key=lambda p: p["PartNumber"])
+
+                    complete_response = s3.complete_multipart_upload(
+                        Bucket=R2_BUCKET_NAME,
+                        Key=session["object_key"],
+                        UploadId=session["upload_id"],
+                        MultipartUpload={"Parts": parts},
+                    )
+
+                    del _UPLOAD_SESSIONS[session_id]
+
+                    print(f"[COMPLETE] Upload finished: {session['object_key']}")
+
+                    return JSONResponse(content={
+                        "status": "complete",
+                        "object_key": session["object_key"],
+                    }, status_code=200)
+            except Exception as e:
+                print(f"[CHUNK] Error checking completion: {e}")
+
+        return JSONResponse(content={"status": "ok", "part_number": part_number}, status_code=200)
+
     except Exception as e:
-        print(f"[CHUNK ERROR] Exception during upload: {type(e).__name__}: {str(e)}")
+        print(f"[CHUNK ERROR] {type(e).__name__}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
-
-    print(f"[CHUNK] Response status: {resp.status_code}")
-
-    if resp.status_code in (200, 201):
-        if upload_id and upload_id in _SESSIONS:
-            _SESSIONS.pop(upload_id, None)
-            save_sessions()
-        return JSONResponse(content=resp.json(), status_code=resp.status_code)
-    if resp.status_code == 308:
-        if upload_id and upload_id in _SESSIONS:
-            range_header = resp.headers.get("Range", "")
-            next_offset = 0
-            if range_header.startswith("bytes="):
-                next_offset = int(range_header.split("-")[-1]) + 1
-            _SESSIONS[upload_id]["offset"] = next_offset
-            _SESSIONS[upload_id]["updated_at"] = datetime.utcnow().isoformat()
-            save_sessions()
-            return JSONResponse(content={"status": "resume", "next_offset": next_offset}, status_code=308)
-        return JSONResponse(content={"status": "resume"}, status_code=308)
-
-    error_detail = resp.text[:500] if resp.text else f"HTTP {resp.status_code}"
-    print(f"[CHUNK ERROR] Google Drive returned {resp.status_code}: {error_detail}")
-    raise HTTPException(status_code=500, detail=error_detail)
 
 
 @app.post("/api/upload/complete")
@@ -736,9 +690,7 @@ async def api_batch_finish(payload: Dict[str, Any]):
     if len(files) > MAX_FILES_PER_BATCH:
         raise HTTPException(status_code=400, detail="Too many files in batch")
 
-    service = drive_service()
-    schema = ensure_schema(service)
-
+    # Save manifest to R2
     manifest = {
         "batch_id": batch_id,
         "contributor_token": token,
@@ -751,16 +703,21 @@ async def api_batch_finish(payload: Dict[str, Any]):
         "voice_note": payload.get("voice_note"),
     }
 
-    manifest_name = f"{batch_id}.json"
-    manifest_bytes = json.dumps(manifest, indent=2).encode("utf-8")
+    try:
+        s3 = get_r2_client()
+        manifest_key = f"_manifests/{batch_id}.json"
+        s3.put_object(
+            Bucket=R2_BUCKET_NAME,
+            Key=manifest_key,
+            Body=json.dumps(manifest, indent=2),
+            ContentType="application/json",
+        )
+        print(f"[MANIFEST] Saved: {manifest_key}")
+    except Exception as e:
+        print(f"[MANIFEST ERROR] {type(e).__name__}: {str(e)}")
+        # Don't fail the batch if manifest save fails
 
-    service.files().create(
-        body={"name": manifest_name, "parents": [schema["MANIFESTS"]]},
-        media_body=manifest_bytes,
-        fields="id",
-    ).execute()
-
-    total = update_counter(service, token, len(files))
+    total = update_upload_count(token, len(files))
 
     return {
         "status": "ok",
