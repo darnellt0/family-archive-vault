@@ -452,7 +452,7 @@ async def api_register(payload: Dict[str, Any]):
     if existing:
         if existing["status"] == "active":
             # Return their existing upload URL
-            upload_url = f"{BASE_URL}/u/{existing['token']}"
+            upload_url = f"/u/{existing['token']}"
             return {
                 "status": "ok",
                 "message": "You're already registered!",
@@ -462,7 +462,8 @@ async def api_register(payload: Dict[str, Any]):
 
     # Create new contributor (immediately active - no email verification)
     token = create_contributor(email, display_name)
-    upload_url = f"{BASE_URL}/u/{token}"
+    # Use relative URL for redirect (more reliable across deployments)
+    upload_url = f"/u/{token}"
 
     return {
         "status": "ok",
