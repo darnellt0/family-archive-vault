@@ -15,7 +15,13 @@
       "Bash(git remote:*)",
       "Bash(xcopy:*)",
       "Bash(Copy-Item -Path \"F:\\\\FamilyArchive\\\\apps\" -Destination \"F:\\\\FamilyArchive\\\\backup_local\\\\apps\" -Recurse -Force)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(railway status:*)",
+      "Bash(ls:*)",
+      "Bash(git push:*)",
+      "Bash(gh api:*)",
+      "Bash(curl:*)",
+      "Bash(railway logs:*)"
     ]
   }
 }

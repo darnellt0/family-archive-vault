@@ -179,27 +179,9 @@
 
       uppy.use(Uppy.Dashboard, { inline: true, target: "#uploader" });
 
-      uppy.on("file-added", async (file) => {
-        const stored = loadSession(file);
-        if (stored && stored.offset < file.size) {
-          file.sessionUrl = stored.sessionUrl;
-          file.uploadId = stored.uploadId;
-          file.offset = stored.offset || 0;
-          file.uploadStartedAt = stored.uploadStartedAt || new Date().toISOString();
-          return;
-        }
-
-        const init = await initUpload(file);
-        file.sessionUrl = init.upload_url;
-        file.uploadId = init.upload_id;
-        file.uploadStartedAt = init.upload_started_at;
-        file.offset = 0;
-        saveSession(file, {
-          sessionUrl: file.sessionUrl,
-          uploadId: file.uploadId,
-          offset: 0,
-          uploadStartedAt: file.uploadStartedAt
-        });
+      // File added - we'll initialize upload when actually uploading
+      uppy.on("file-added", (file) => {
+        console.log("File added:", file.name, file.size, "bytes");
       });
 
       uppy.on("upload", async (data) => {
@@ -209,64 +191,74 @@
 
         for (const id of fileIDs) {
           const file = uppy.getFile(id);
-          const chunkSize = 10 * 1024 * 1024; // 10MB
-          let offset = file.offset || 0;
-
-          // Ensure we have a valid session URL before uploading
-          if (!file.sessionUrl || file.sessionUrl === "undefined") {
-            console.log("No session URL, initializing upload for", file.name);
-            try {
-              const init = await initUpload(file);
-              file.sessionUrl = init.upload_url;
-              file.uploadId = init.upload_id;
-              file.uploadStartedAt = init.upload_started_at;
-              file.offset = 0;
-              offset = 0;
-              saveSession(file, {
-                sessionUrl: file.sessionUrl,
-                uploadId: file.uploadId,
-                offset: 0,
-                uploadStartedAt: file.uploadStartedAt
-              });
-            } catch (initErr) {
-              errorEl.textContent = `Failed to initialize upload for ${file.name}: ${initErr.message}`;
-              errorEl.style.display = "block";
-              continue;
-            }
-          }
 
           try {
-            while (offset < file.size) {
-              const end = Math.min(offset + chunkSize, file.size);
-              const chunk = file.data.slice(offset, end);
-              const contentRange = `bytes ${offset}-${end - 1}/${file.size}`;
-              const result = await uploadChunkWithRetry(file, chunk, { contentRange }, file.sessionUrl, file.uploadId);
+            // Initialize upload - backend decides direct vs multipart based on file size
+            const init = await initUpload(file);
+            console.log("Upload init response:", init);
 
-              if (result.done) {
-                uploadedFiles.push({
-                  original_name: file.name,
-                  mime: file.type || "application/octet-stream",
-                  size: file.size,
-                  drive_file_id: result.drive_file_id,
-                  upload_started_at: file.uploadStartedAt,
-                  upload_finished_at: new Date().toISOString()
-                });
-                clearSession(file);
-                break;
+            if (init.upload_type === "direct") {
+              // Small file - upload directly to R2 using presigned URL
+              console.log("Using direct upload to R2 for", file.name);
+
+              const uploadRes = await fetch(init.upload_url, {
+                method: "PUT",
+                headers: {
+                  "Content-Type": file.type || "application/octet-stream",
+                },
+                body: file.data
+              });
+
+              if (!uploadRes.ok) {
+                throw new Error(`Direct upload failed: ${uploadRes.status} ${uploadRes.statusText}`);
               }
 
-              if (result.nextOffset !== null) {
-                offset = result.nextOffset;
-              } else {
+              uploadedFiles.push({
+                original_name: file.name,
+                mime: file.type || "application/octet-stream",
+                size: file.size,
+                object_key: init.object_key,
+                upload_started_at: init.upload_started_at,
+                upload_finished_at: new Date().toISOString()
+              });
+
+              console.log("Direct upload complete for", file.name);
+
+            } else {
+              // Large file - use multipart chunked upload
+              console.log("Using multipart upload for", file.name);
+
+              const chunkSize = 5 * 1024 * 1024; // 5MB chunks for multipart
+              let offset = 0;
+
+              while (offset < file.size) {
+                const end = Math.min(offset + chunkSize, file.size);
+                const chunk = file.data.slice(offset, end);
+                const contentRange = `bytes ${offset}-${end - 1}/${file.size}`;
+
+                const result = await uploadChunkWithRetry(file, chunk, { contentRange }, init.upload_url, init.upload_id);
+
+                if (result.done || result.status === "complete") {
+                  uploadedFiles.push({
+                    original_name: file.name,
+                    mime: file.type || "application/octet-stream",
+                    size: file.size,
+                    object_key: init.object_key,
+                    upload_started_at: init.upload_started_at,
+                    upload_finished_at: new Date().toISOString()
+                  });
+                  break;
+                }
+
                 offset = end;
               }
-              saveSession(file, {
-                sessionUrl: file.sessionUrl,
-                uploadId: file.uploadId,
-                offset,
-                uploadStartedAt: file.uploadStartedAt
-              });
+
+              console.log("Multipart upload complete for", file.name);
             }
+
+            // Update Uppy UI to show completion
+            uppy.setFileState(id, { progress: { uploadComplete: true, uploadStarted: true } });
+
           } catch (err) {
             errorEl.textContent = `Upload failed for ${file.name}: ${err.message}. Please try again.`;
             errorEl.style.display = "block";
