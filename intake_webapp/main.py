@@ -467,24 +467,21 @@ async def api_upload_init(payload: Dict[str, Any]):
                 "upload_started_at": datetime.utcnow().isoformat(),
             }
         else:
-            # For smaller files, generate a presigned PUT URL
-            presigned_url = s3.generate_presigned_url(
-                "put_object",
-                Params={
-                    "Bucket": R2_BUCKET_NAME,
-                    "Key": object_key,
-                    "ContentType": mime_type,
-                },
-                ExpiresIn=3600,  # 1 hour
-            )
+            # For smaller files, use server-side upload to avoid CORS issues
+            session_id = str(uuid.uuid4())
+            _UPLOAD_SESSIONS[session_id] = {
+                "object_key": object_key,
+                "mime_type": mime_type,
+                "size_bytes": size_bytes,
+                "created_at": datetime.utcnow().isoformat(),
+            }
 
-            print(f"[INIT] Presigned URL generated for direct upload")
+            print(f"[INIT] Small file upload session created: {session_id}")
 
             return {
                 "batch_id": batch_id,
-                "upload_id": str(uuid.uuid4()),
-                "upload_url": presigned_url,
-                "upload_type": "direct",
+                "upload_id": session_id,
+                "upload_type": "simple",
                 "object_key": object_key,
                 "upload_started_at": datetime.utcnow().isoformat(),
             }
@@ -585,6 +582,45 @@ async def api_complete_multipart(payload: Dict[str, Any]):
     except Exception as e:
         print(f"[COMPLETE ERROR] {type(e).__name__}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to complete upload: {str(e)}")
+
+
+@app.post("/api/upload/simple")
+async def api_upload_simple(request: Request):
+    """Handle simple file upload (small files) - proxy to R2."""
+    session_id = request.headers.get("X-Upload-Id")
+    content_type = request.headers.get("Content-Type") or "application/octet-stream"
+
+    if not session_id or session_id not in _UPLOAD_SESSIONS:
+        raise HTTPException(status_code=400, detail="Invalid or missing upload session")
+
+    session = _UPLOAD_SESSIONS[session_id]
+    body = await request.body()
+
+    print(f"[SIMPLE] Uploading {len(body)} bytes to {session['object_key']}")
+
+    try:
+        s3 = get_r2_client()
+
+        s3.put_object(
+            Bucket=R2_BUCKET_NAME,
+            Key=session["object_key"],
+            Body=body,
+            ContentType=session.get("mime_type", content_type),
+        )
+
+        # Clean up session
+        del _UPLOAD_SESSIONS[session_id]
+
+        print(f"[SIMPLE] Upload complete: {session['object_key']}")
+
+        return JSONResponse(content={
+            "status": "complete",
+            "object_key": session["object_key"],
+        }, status_code=200)
+
+    except Exception as e:
+        print(f"[SIMPLE ERROR] {type(e).__name__}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
 
 @app.put("/api/upload/chunk")

@@ -193,36 +193,39 @@
           const file = uppy.getFile(id);
 
           try {
-            // Initialize upload - backend decides direct vs multipart based on file size
+            // Initialize upload - backend decides simple vs multipart based on file size
             const init = await initUpload(file);
             console.log("Upload init response:", init);
 
-            if (init.upload_type === "direct") {
-              // Small file - upload directly to R2 using presigned URL
-              console.log("Using direct upload to R2 for", file.name);
+            if (init.upload_type === "simple") {
+              // Small file - upload through server to R2
+              console.log("Using simple upload for", file.name);
 
-              const uploadRes = await fetch(init.upload_url, {
-                method: "PUT",
+              const uploadRes = await fetch("/api/upload/simple", {
+                method: "POST",
                 headers: {
                   "Content-Type": file.type || "application/octet-stream",
+                  "X-Upload-Id": init.upload_id,
                 },
                 body: file.data
               });
 
               if (!uploadRes.ok) {
-                throw new Error(`Direct upload failed: ${uploadRes.status} ${uploadRes.statusText}`);
+                const errText = await uploadRes.text();
+                throw new Error(`Upload failed: ${uploadRes.status} - ${errText}`);
               }
 
+              const result = await uploadRes.json();
               uploadedFiles.push({
                 original_name: file.name,
                 mime: file.type || "application/octet-stream",
                 size: file.size,
-                object_key: init.object_key,
+                object_key: result.object_key || init.object_key,
                 upload_started_at: init.upload_started_at,
                 upload_finished_at: new Date().toISOString()
               });
 
-              console.log("Direct upload complete for", file.name);
+              console.log("Simple upload complete for", file.name);
 
             } else {
               // Large file - use multipart chunked upload

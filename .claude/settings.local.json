@@ -21,7 +21,9 @@
       "Bash(git push:*)",
       "Bash(gh api:*)",
       "Bash(curl:*)",
-      "Bash(railway logs:*)"
+      "Bash(railway logs:*)",
+      "Bash(git pull:*)",
+      "Bash(git stash:*)"
     ]
   }
 }
