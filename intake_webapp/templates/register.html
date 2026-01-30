@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Join Family Archive</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      margin: 0;
+      padding: 16px;
+      background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .container {
+      width: 100%;
+      max-width: 420px;
+    }
+    .card {
+      background: rgba(17, 24, 39, 0.9);
+      border: 1px solid #374151;
+      padding: 32px;
+      border-radius: 16px;
+      backdrop-filter: blur(10px);
+    }
+    .logo {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+    .logo-icon {
+      width: 64px;
+      height: 64px;
+      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+      border-radius: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      margin-bottom: 12px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 24px;
+      font-weight: 700;
+      text-align: center;
+    }
+    .subtitle {
+      text-align: center;
+      color: #94a3b8;
+      font-size: 14px;
+      margin-bottom: 24px;
+    }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: #94a3b8;
+      margin-bottom: 6px;
+    }
+    input {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1px solid #374151;
+      background: #0f172a;
+      color: #e2e8f0;
+      font-size: 16px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    input:focus {
+      outline: none;
+      border-color: #6366f1;
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+    }
+    input::placeholder {
+      color: #64748b;
+    }
+    .btn {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.1s, box-shadow 0.2s;
+    }
+    .btn:active {
+      transform: scale(0.98);
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+      color: white;
+      box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+    }
+    .btn-primary:hover {
+      box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5);
+    }
+    .btn-primary:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .message {
+      padding: 12px 16px;
+      border-radius: 10px;
+      font-size: 14px;
+      margin-bottom: 20px;
+      display: none;
+    }
+    .message.error {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+      display: block;
+    }
+    .message.success {
+      background: rgba(34, 197, 94, 0.1);
+      border: 1px solid rgba(34, 197, 94, 0.3);
+      color: #86efac;
+      display: block;
+    }
+    .hint {
+      font-size: 12px;
+      color: #64748b;
+      margin-top: 6px;
+    }
+    .footer {
+      text-align: center;
+      margin-top: 20px;
+      font-size: 13px;
+      color: #64748b;
+    }
+    .footer a {
+      color: #818cf8;
+      text-decoration: none;
+    }
+    .spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <div class="logo">
+        <div class="logo-icon">📸</div>
+        <h1>Join Family Archive</h1>
+        <p class="subtitle">Preserve and share your family memories</p>
+      </div>
+
+      <div id="message" class="message"></div>
+
+      <form id="registerForm">
+        <div class="form-group">
+          <label for="display_name">Your Name</label>
+          <input type="text" id="display_name" name="display_name"
+                 placeholder="e.g., Aunt Mary" required minlength="2" maxlength="50">
+        </div>
+
+        <div class="form-group">
+          <label for="email">Email Address</label>
+          <input type="email" id="email" name="email"
+                 placeholder="you@example.com" required>
+          <p class="hint">We'll send a verification link to this address</p>
+        </div>
+
+        <div class="form-group">
+          <label for="family_code">Family Code</label>
+          <input type="text" id="family_code" name="family_code"
+                 placeholder="Enter the code shared by your family" required>
+          <p class="hint">Ask your family archivist for this code</p>
+        </div>
+
+        <button type="submit" class="btn btn-primary" id="submitBtn">
+          Create My Account
+        </button>
+      </form>
+
+      <div class="footer">
+        Already registered? Check your email for your upload link.
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('registerForm');
+    const message = document.getElementById('message');
+    const submitBtn = document.getElementById('submitBtn');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      // Clear previous messages
+      message.className = 'message';
+      message.style.display = 'none';
+
+      // Disable button and show loading state
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<span class="spinner"></span>Creating account...';
+
+      const formData = {
+        display_name: document.getElementById('display_name').value.trim(),
+        email: document.getElementById('email').value.trim(),
+        family_code: document.getElementById('family_code').value.trim()
+      };
+
+      try {
+        const response = await fetch('/api/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData)
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.upload_url) {
+          // Redirect to upload page immediately
+          window.location.href = data.upload_url;
+          return;
+        } else if (response.ok) {
+          message.className = 'message success';
+          message.innerHTML = `<strong>Success!</strong><br>${data.message}`;
+          form.reset();
+        } else {
+          message.className = 'message error';
+          message.textContent = data.detail || 'Registration failed. Please try again.';
+        }
+      } catch (error) {
+        message.className = 'message error';
+        message.textContent = 'Network error. Please check your connection and try again.';
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Create My Account';
+      }
+    });
+  </script>
+</body>
+</html>

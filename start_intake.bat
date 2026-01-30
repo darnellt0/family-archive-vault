@@ -1,20 +1,19 @@
 @echo off
-title Family Archive - Worker
+title Family Archive - Intake Web App
 echo.
 echo ========================================
-echo   FAMILY ARCHIVE VAULT - WORKER
+echo   FAMILY ARCHIVE VAULT - INTAKE
 echo ========================================
 echo.
 
 cd /d %~dp0
 call .venv\Scripts\activate
 
-echo Starting worker...
-echo Processing files from Google Drive
+echo Starting intake web app on http://localhost:8000
 echo.
 echo Press Ctrl+C to stop
 echo.
 
-python -m worker.main
+python -m intake_webapp.main
 
 pause

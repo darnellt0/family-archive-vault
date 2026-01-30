@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  intake:
+    build: .
+    container_name: family-archive-intake
+    ports:
+      - "8000:8000"
+    environment:
+      - DRIVE_ROOT_FOLDER_ID=${DRIVE_ROOT_FOLDER_ID}
+      - SERVICE_ACCOUNT_JSON_PATH=/secrets/service-account.json
+      - LOCAL_ROOT=/data
+      - INTAKE_SECRET_KEY=${INTAKE_SECRET_KEY}
+      - TOKEN_aunt1=${TOKEN_aunt1}
+      - TOKEN_aunt2=${TOKEN_aunt2}
+      - TOKEN_aunt3=${TOKEN_aunt3}
+      - TOKEN_aunt4=${TOKEN_aunt4}
+    volumes:
+      - ./secrets/service-account.json:/secrets/service-account.json:ro
+      - intake-data:/data
+    restart: unless-stopped
+
+volumes:
+  intake-data:

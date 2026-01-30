@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Family Archive Intake</title>
+  <link rel="stylesheet" href="https://releases.transloadit.com/uppy/v3.19.0/uppy.min.css" />
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 16px; background: #0f172a; color: #e2e8f0; }
+    .card { background: #111827; border: 1px solid #1f2937; padding: 16px; border-radius: 12px; }
+    .row { margin-bottom: 12px; }
+    .label { font-size: 12px; color: #94a3b8; }
+    input, textarea { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #e2e8f0; }
+    .cta { margin-top: 12px; background: #2563eb; color: white; border: none; padding: 12px 16px; border-radius: 10px; font-weight: 600; cursor: pointer; }
+    .small { font-size: 12px; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Hi {{ display_name }} 👋</h2>
+    <p class="small">Upload photos and videos to the Family Archive. Large videos are supported with resumable uploads.</p>
+
+    <div class="row">
+      <div class="label">Event / Notes (optional)</div>
+      <textarea id="notes" rows="3" placeholder="Birthday party, 2002..."></textarea>
+    </div>
+    <div class="row">
+      <div class="label">Decade (optional)</div>
+      <input id="decade" placeholder="1990s" />
+    </div>
+
+    <div id="uploader"></div>
+    <div class="row">
+      <button class="cta" id="recordBtn">Record Voice Note</button>
+      <button class="cta" id="stopBtn" disabled>Stop Recording</button>
+      <p class="small">Optional: record a quick voice note with context.</p>
+    </div>
+    <button class="cta" id="finishBtn">Finish Batch</button>
+    <p id="status" class="small"></p>
+    <p id="error" class="small" style="color: #f87171; display: none;"></p>
+  </div>
+
+  <script src="https://releases.transloadit.com/uppy/v3.19.0/uppy.min.js"></script>
+  <script>
+    const token = "{{ token }}";
+    let batchId = null;
+    let uploadedFiles = [];
+    let voiceNote = null;
+
+    async function createBatch() {
+      const res = await fetch("/api/batch/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token })
+      });
+      const data = await res.json();
+      batchId = data.batch_id;
+      return data;
+    }
+
+    function sessionKey(file) {
+      return `${token}:${file.name}:${file.size}`;
+    }
+
+    // Store resumable session info in localStorage so mobile refreshes can resume.
+    function loadSession(file) {
+      const raw = localStorage.getItem("uploadSessions");
+      if (!raw) return null;
+      try {
+        const data = JSON.parse(raw);
+        return data[sessionKey(file)] || null;
+      } catch {
+        return null;
+      }
+    }
+
+    function saveSession(file, session) {
+      const raw = localStorage.getItem("uploadSessions");
+      let data = {};
+      if (raw) {
+        try { data = JSON.parse(raw); } catch {}
+      }
+      data[sessionKey(file)] = session;
+      localStorage.setItem("uploadSessions", JSON.stringify(data));
+    }
+
+    function clearSession(file) {
+      const raw = localStorage.getItem("uploadSessions");
+      if (!raw) return;
+      try {
+        const data = JSON.parse(raw);
+        delete data[sessionKey(file)];
+        localStorage.setItem("uploadSessions", JSON.stringify(data));
+      } catch {}
+    }
+
+    async function initUpload(file) {
+      const res = await fetch("/api/upload/init", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token,
+          batch_id: batchId,
+          filename: file.name,
+          mime_type: file.type || "application/octet-stream",
+          size_bytes: file.size
+        })
+      });
+      return await res.json();
+    }
+
+    async function uploadChunk(file, chunk, chunkMeta, sessionUrl, uploadId) {
+      const res = await fetch("/api/upload/chunk", {
+        method: "PUT",
+        headers: {
+          "Content-Type": file.type || "application/octet-stream",
+          "Content-Range": chunkMeta.contentRange,
+          "X-Upload-Session-Url": sessionUrl,
+          "X-Upload-Id": uploadId
+        },
+        body: chunk
+      });
+
+      if (res.status === 200 || res.status === 201) {
+        const data = await res.json();
+        return { done: true, drive_file_id: data.id };
+      }
+
+      if (res.status === 308) {
+        const data = await res.json();
+        return { done: false, nextOffset: data.next_offset || null };
+      }
+
+      const text = await res.text();
+      throw new Error(text || "Chunk upload failed");
+    }
+
+    // Retry chunks with backoff to tolerate spotty mobile connections.
+    async function uploadChunkWithRetry(file, chunk, chunkMeta, sessionUrl, uploadId) {
+      let attempt = 0;
+      while (attempt < 5) {
+        try {
+          return await uploadChunk(file, chunk, chunkMeta, sessionUrl, uploadId);
+        } catch (err) {
+          attempt += 1;
+          await new Promise(r => setTimeout(r, 500 * attempt));
+        }
+      }
+      throw new Error("Chunk upload failed after retries");
+    }
+
+    async function completeBatch() {
+      const notes = document.getElementById("notes").value;
+      const decade = document.getElementById("decade").value;
+
+      const res = await fetch("/api/batch/finish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token,
+          batch_id: batchId,
+          decade,
+          notes,
+          files: uploadedFiles,
+          voice_note: voiceNote
+        })
+      });
+      const data = await res.json();
+      document.getElementById("status").textContent = data.message || "Batch complete.";
+    }
+
+    (async () => {
+      await createBatch();
+
+      const uppy = new Uppy.Uppy({
+        restrictions: { maxNumberOfFiles: 100 },
+        autoProceed: false
+      });
+
+      uppy.use(Uppy.Dashboard, { inline: true, target: "#uploader" });
+
+      uppy.on("file-added", async (file) => {
+        const stored = loadSession(file);
+        if (stored && stored.offset < file.size) {
+          file.sessionUrl = stored.sessionUrl;
+          file.uploadId = stored.uploadId;
+          file.offset = stored.offset || 0;
+          file.uploadStartedAt = stored.uploadStartedAt || new Date().toISOString();
+          return;
+        }
+
+        const init = await initUpload(file);
+        file.sessionUrl = init.upload_url;
+        file.uploadId = init.upload_id;
+        file.uploadStartedAt = init.upload_started_at;
+        file.offset = 0;
+        saveSession(file, {
+          sessionUrl: file.sessionUrl,
+          uploadId: file.uploadId,
+          offset: 0,
+          uploadStartedAt: file.uploadStartedAt
+        });
+      });
+
+      uppy.on("upload", async (data) => {
+        const fileIDs = data.fileIDs;
+        const errorEl = document.getElementById("error");
+        errorEl.style.display = "none";
+
+        for (const id of fileIDs) {
+          const file = uppy.getFile(id);
+          const chunkSize = 10 * 1024 * 1024; // 10MB
+          let offset = file.offset || 0;
+
+          try {
+            while (offset < file.size) {
+              const end = Math.min(offset + chunkSize, file.size);
+              const chunk = file.data.slice(offset, end);
+              const contentRange = `bytes ${offset}-${end - 1}/${file.size}`;
+              const result = await uploadChunkWithRetry(file, chunk, { contentRange }, file.sessionUrl, file.uploadId);
+
+              if (result.done) {
+                uploadedFiles.push({
+                  original_name: file.name,
+                  mime: file.type || "application/octet-stream",
+                  size: file.size,
+                  drive_file_id: result.drive_file_id,
+                  upload_started_at: file.uploadStartedAt,
+                  upload_finished_at: new Date().toISOString()
+                });
+                clearSession(file);
+                break;
+              }
+
+              if (result.nextOffset !== null) {
+                offset = result.nextOffset;
+              } else {
+                offset = end;
+              }
+              saveSession(file, {
+                sessionUrl: file.sessionUrl,
+                uploadId: file.uploadId,
+                offset,
+                uploadStartedAt: file.uploadStartedAt
+              });
+            }
+          } catch (err) {
+            errorEl.textContent = `Upload failed for ${file.name}: ${err.message}. Please try again.`;
+            errorEl.style.display = "block";
+            console.error("Upload error:", err);
+          }
+        }
+      });
+
+      let mediaRecorder = null;
+      let chunks = [];
+
+      document.getElementById("recordBtn").addEventListener("click", async () => {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        chunks = [];
+        mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
+        mediaRecorder.start();
+        document.getElementById("recordBtn").disabled = true;
+        document.getElementById("stopBtn").disabled = false;
+      });
+
+      document.getElementById("stopBtn").addEventListener("click", async () => {
+        if (!mediaRecorder) return;
+        mediaRecorder.stop();
+        mediaRecorder.onstop = async () => {
+          const blob = new Blob(chunks, { type: "audio/webm" });
+          const file = new File([blob], "voice_note.webm", { type: "audio/webm" });
+
+          const init = await initUpload(file);
+          const chunkSize = 5 * 1024 * 1024;
+          let offset = 0;
+          while (offset < file.size) {
+            const end = Math.min(offset + chunkSize, file.size);
+            const chunk = file.slice(offset, end);
+            const contentRange = `bytes ${offset}-${end - 1}/${file.size}`;
+            const result = await uploadChunkWithRetry(file, chunk, { contentRange }, init.upload_url, init.upload_id);
+            if (result.done) {
+              voiceNote = {
+                drive_file_id: result.drive_file_id,
+                mime: file.type,
+                size: file.size
+              };
+              break;
+            }
+            offset = end;
+          }
+
+          document.getElementById("recordBtn").disabled = false;
+          document.getElementById("stopBtn").disabled = true;
+        };
+      });
+
+      document.getElementById("finishBtn").addEventListener("click", async () => {
+        await completeBatch();
+      });
+    })();
+  </script>
+</body>
+</html>

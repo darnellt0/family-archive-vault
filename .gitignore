@@ -4,41 +4,70 @@ __pycache__/
 *$py.class
 *.so
 .Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
 venv/
-env/
 .venv/
+env/
 ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.vs/
+
+# Environment
+.env
+.env.local
+.env.*.local
 
 # Database
 *.db
+*.db-journal
+*.sqlite
 *.sqlite3
-contributors.db
 
-# Secrets - NEVER commit these
-service-account.json
-*.pem
-*.key
-.env
+# Logs
+*.log
+logs/
 
-# Session data
-upload_sessions.json
+# Cache & temporary files
+cache/
+temp/
+tmp/
+*.tmp
 
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
+# Service account keys
+secrets/
+*.json
+!pyproject.toml
+!package.json
 
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
 
-# Logs
-*.log
-
-# Windows reserved names
+# Project specific
+qr_codes/
+F:/
+rosetta_site/
+backup_local/
 nul
 NUL
 
-# Node (if any frontend)
-node_modules/
+# AI models (downloaded at runtime)
+models/
+*.onnx
+*.pth
+*.bin
+
+# Large binaries
+tools/tailwindcss.exe
+*.exe
