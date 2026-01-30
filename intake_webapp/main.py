@@ -348,8 +348,14 @@ def upload_chunk(session_url: str, chunk: bytes, content_range: str, content_typ
         "Content-Type": content_type,
         "Content-Range": content_range,
     }
-    resp = session.put(session_url, headers=headers, data=chunk)
-    return resp
+    try:
+        resp = session.put(session_url, headers=headers, data=chunk, timeout=60)
+        if resp.status_code >= 400:
+            print(f"[UPLOAD ERROR] Status {resp.status_code}: {resp.text[:500]}")
+        return resp
+    except Exception as e:
+        print(f"[UPLOAD EXCEPTION] {type(e).__name__}: {str(e)}")
+        raise
 
 
 def query_upload_status(session_url: str, total_size: int) -> int:
