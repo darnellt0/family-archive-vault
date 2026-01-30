@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -402,6 +402,14 @@ def update_counter(service, token: str, increment: int) -> int:
         ).execute()
 
     return new_count
+
+
+# --- Root Redirect ---
+
+@app.get("/")
+def root_redirect():
+    """Redirect root to registration page."""
+    return RedirectResponse(url="/register", status_code=302)
 
 
 # --- Registration Endpoints ---
