@@ -156,6 +156,22 @@
       background: var(--bg-card);
     }
 
+    .photo-card img.load-error {
+      background: linear-gradient(135deg, var(--bg-card) 0%, #1a1a1a 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      position: relative;
+    }
+
+    .photo-card img.load-error::after {
+      content: 'Click to retry';
+      position: absolute;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+    }
+
     .photo-card .overlay {
       position: absolute;
       bottom: 0;
@@ -608,14 +624,12 @@
       }
     }
 
-    // Load images lazily
-    async function loadVisibleImages() {
-      const images = document.querySelectorAll('.photo-card img[data-key]');
-
-      images.forEach(async img => {
-        const key = img.dataset.key;
+    // Load a single image with retry logic
+    async function loadImageWithRetry(img, key, retries = 3, delay = 1000) {
+      for (let attempt = 1; attempt <= retries; attempt++) {
         try {
           const res = await fetch(`/api/gallery/image/${encodeURIComponent(key)}`);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const data = await res.json();
 
           // Check if HEIC and convert if needed
@@ -626,11 +640,56 @@
           } else {
             img.src = data.url;
           }
+
+          // Success - remove any error styling
+          img.classList.remove('load-error');
+          img.removeAttribute('data-failed');
+          return true;
         } catch (err) {
-          img.style.background = 'var(--bg-card)';
+          console.warn(`Image load attempt ${attempt}/${retries} failed for ${key}:`, err.message);
+          if (attempt < retries) {
+            await new Promise(r => setTimeout(r, delay * attempt)); // Exponential backoff
+          }
         }
-      });
+      }
+
+      // All retries failed - show placeholder
+      img.classList.add('load-error');
+      img.setAttribute('data-failed', 'true');
+      img.alt = 'Click to retry';
+      return false;
     }
+
+    // Load images in batches to avoid overwhelming the server
+    async function loadVisibleImages() {
+      const images = Array.from(document.querySelectorAll('.photo-card img[data-key]'));
+      const batchSize = 6; // Load 6 images at a time
+
+      for (let i = 0; i < images.length; i += batchSize) {
+        const batch = images.slice(i, i + batchSize);
+
+        // Load batch in parallel
+        await Promise.all(batch.map(img => {
+          const key = img.dataset.key;
+          return loadImageWithRetry(img, key);
+        }));
+
+        // Small delay between batches to avoid rate limiting
+        if (i + batchSize < images.length) {
+          await new Promise(r => setTimeout(r, 200));
+        }
+      }
+    }
+
+    // Click to retry failed images
+    document.addEventListener('click', async (e) => {
+      const img = e.target.closest('.photo-card img[data-failed="true"]');
+      if (img) {
+        img.alt = 'Retrying...';
+        const key = img.dataset.key;
+        await loadImageWithRetry(img, key, 2, 500);
+      }
+    });
 
     // Lightbox functions
     async function openLightbox(key, index) {
