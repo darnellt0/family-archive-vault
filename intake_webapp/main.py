@@ -1025,6 +1025,18 @@ async def api_gallery_photos(request: Request):
     try:
         s3 = get_r2_client()
 
+        # First, get all files that actually exist in R2
+        paginator = s3.get_paginator('list_objects_v2')
+        existing_files = set()
+        file_sizes = {}
+
+        for page in paginator.paginate(Bucket=R2_BUCKET_NAME):
+            for obj in page.get('Contents', []):
+                key = obj['Key']
+                if not key.startswith('_manifests/'):
+                    existing_files.add(key)
+                    file_sizes[key] = obj['Size']
+
         # Get all manifests to understand the batches
         manifest_resp = s3.list_objects_v2(Bucket=R2_BUCKET_NAME, Prefix='_manifests/')
 
@@ -1039,16 +1051,16 @@ async def api_gallery_photos(request: Request):
             manifest_obj = s3.get_object(Bucket=R2_BUCKET_NAME, Key=key)
             manifest = json.loads(manifest_obj['Body'].read().decode('utf-8'))
 
-            # Get files for this batch
+            # Get files for this batch - only include files that actually exist
             batch_files = []
             for f in manifest.get('files', []):
                 object_key = f.get('object_key', '')
-                if object_key:
+                if object_key and object_key in existing_files:
                     all_files_in_batches.add(object_key)
                     batch_files.append({
                         "key": object_key,
                         "name": f.get('original_name', ''),
-                        "size": f.get('size', 0),
+                        "size": f.get('size', 0) or file_sizes.get(object_key, 0),
                     })
 
             batches.append({
@@ -1065,23 +1077,17 @@ async def api_gallery_photos(request: Request):
         # Sort batches by date (newest first)
         batches.sort(key=lambda x: x['date'], reverse=True)
 
-        # Also get any files not in manifests (orphaned files)
-        paginator = s3.get_paginator('list_objects_v2')
+        # Get orphaned files (exist in R2 but not in any manifest)
         orphaned = []
-
-        for page in paginator.paginate(Bucket=R2_BUCKET_NAME):
-            for obj in page.get('Contents', []):
-                key = obj['Key']
-                if key.startswith('_manifests/'):
-                    continue
-                if key not in all_files_in_batches:
-                    parts = key.split('/')
-                    orphaned.append({
-                        "key": key,
-                        "name": parts[-1] if parts else key,
-                        "size": obj['Size'],
-                        "contributor": parts[0].replace('_UPLOADS', '') if len(parts) > 1 else 'Unknown',
-                    })
+        for key in existing_files:
+            if key not in all_files_in_batches:
+                parts = key.split('/')
+                orphaned.append({
+                    "key": key,
+                    "name": parts[-1] if parts else key,
+                    "size": file_sizes.get(key, 0),
+                    "contributor": parts[0].replace('_UPLOADS', '') if len(parts) > 1 else 'Unknown',
+                })
 
         return {
             "batches": batches,
