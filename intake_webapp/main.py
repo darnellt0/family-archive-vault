@@ -14,6 +14,7 @@ from typing import Dict, Any, List, Optional
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import boto3
 from botocore.config import Config
@@ -23,6 +24,11 @@ app = FastAPI()
 
 BASE_DIR = Path(__file__).parent
 TEMPLATES = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+
+# Mount static files for Open Graph images, etc.
+STATIC_DIR = BASE_DIR / "static"
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # Cloudflare R2 Configuration
 R2_ACCOUNT_ID = os.getenv("R2_ACCOUNT_ID")

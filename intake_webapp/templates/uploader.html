@@ -3,7 +3,21 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Family Archive Intake</title>
+  <title>Tomlinson Family Memorial - Share Your Memories</title>
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Tomlinson Family Memorial" />
+  <meta property="og:description" content="Share your photos and memories of our beloved family members. Upload pictures and videos to preserve and celebrate their legacy." />
+  <meta property="og:image" content="{{ request.url.scheme }}://{{ request.url.netloc }}/static/og-preview.jpg" />
+  <meta property="og:url" content="{{ request.url }}" />
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Tomlinson Family Memorial" />
+  <meta name="twitter:description" content="Share your photos and memories of our beloved family members." />
+  <meta name="twitter:image" content="{{ request.url.scheme }}://{{ request.url.netloc }}/static/og-preview.jpg" />
+
   <link rel="stylesheet" href="https://releases.transloadit.com/uppy/v3.19.0/uppy.min.css" />
   <style>
     body { font-family: system-ui, sans-serif; margin: 0; padding: 16px; background: #0f172a; color: #e2e8f0; }
