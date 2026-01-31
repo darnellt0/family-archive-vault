@@ -663,20 +663,21 @@
     // Load images in batches to avoid overwhelming the server
     async function loadVisibleImages() {
       const images = Array.from(document.querySelectorAll('.photo-card img[data-key]'));
-      const batchSize = 6; // Load 6 images at a time
+      const batchSize = 4; // Load 4 images at a time (reduced to avoid rate limiting)
 
       for (let i = 0; i < images.length; i += batchSize) {
         const batch = images.slice(i, i + batchSize);
 
-        // Load batch in parallel
-        await Promise.all(batch.map(img => {
+        // Load batch sequentially with small delays to avoid rate limiting
+        for (const img of batch) {
           const key = img.dataset.key;
-          return loadImageWithRetry(img, key);
-        }));
+          await loadImageWithRetry(img, key);
+          await new Promise(r => setTimeout(r, 50)); // Small delay between each image
+        }
 
-        // Small delay between batches to avoid rate limiting
+        // Longer delay between batches to avoid rate limiting
         if (i + batchSize < images.length) {
-          await new Promise(r => setTimeout(r, 200));
+          await new Promise(r => setTimeout(r, 300));
         }
       }
     }

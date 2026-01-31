@@ -46,6 +46,8 @@ BASE_URL = os.getenv("BASE_URL", "http://localhost:8080")  # For verification li
 
 _RATE_LIMIT = {}
 _UPLOAD_SESSIONS = {}  # Track multipart uploads
+_URL_CACHE = {}  # Cache presigned URLs to avoid rate limiting
+_URL_CACHE_TTL = 3000  # Cache URLs for 50 minutes (they expire in 60)
 
 
 # --- R2 Client Setup ---
@@ -1099,6 +1101,15 @@ async def api_gallery_image(request: Request, file_key: str):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     try:
+        # Check cache first to avoid R2 rate limiting
+        cache_key = f"url:{file_key}"
+        now = time.time()
+
+        if cache_key in _URL_CACHE:
+            cached_url, cached_time = _URL_CACHE[cache_key]
+            if now - cached_time < _URL_CACHE_TTL:
+                return {"url": cached_url}
+
         s3 = get_r2_client()
 
         url = s3.generate_presigned_url(
@@ -1106,6 +1117,16 @@ async def api_gallery_image(request: Request, file_key: str):
             Params={'Bucket': R2_BUCKET_NAME, 'Key': file_key},
             ExpiresIn=3600,
         )
+
+        # Cache the URL
+        _URL_CACHE[cache_key] = (url, now)
+
+        # Clean old cache entries periodically (every 100 requests)
+        if len(_URL_CACHE) > 500:
+            cutoff = now - _URL_CACHE_TTL
+            keys_to_delete = [k for k, (_, t) in _URL_CACHE.items() if t < cutoff]
+            for k in keys_to_delete:
+                del _URL_CACHE[k]
 
         return {"url": url}
 
