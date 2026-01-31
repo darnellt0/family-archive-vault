@@ -4,6 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Family Memories</title>
+  <!-- HEIC to JPEG conversion for Apple photos -->
+  <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
   <style>
     :root {
       --bg: #0a0a0a;
@@ -382,6 +384,7 @@
   <script>
     let allBatches = [];
     let allPhotos = [];
+    let orphanedFiles = [];
     let currentPhotoIndex = 0;
     let slideshowInterval = null;
     let currentView = 'all';
@@ -406,8 +409,9 @@
           });
         });
 
-        // Add orphaned files
-        data.orphaned_files.forEach(file => {
+        // Store and add orphaned files
+        orphanedFiles = data.orphaned_files || [];
+        orphanedFiles.forEach(file => {
           allPhotos.push({
             ...file,
             batch: { contributor: file.contributor, notes: '', decade: '' },
@@ -488,7 +492,7 @@
 
     // Render batches view
     function renderBatchesView(batches) {
-      const html = batches.map(batch => `
+      let html = batches.map(batch => `
         <div class="batch">
           <div class="batch-header">
             <h2 class="batch-title">
@@ -513,6 +517,40 @@
           </div>
         </div>
       `).join('');
+
+      // Also show orphaned files (uploaded but not in a finished batch)
+      if (orphanedFiles.length > 0 && !currentDecadeFilter) {
+        // Group orphaned files by contributor
+        const byContributor = {};
+        orphanedFiles.forEach(file => {
+          const contrib = file.contributor || 'Unknown';
+          if (!byContributor[contrib]) byContributor[contrib] = [];
+          byContributor[contrib].push(file);
+        });
+
+        Object.entries(byContributor).forEach(([contributor, files]) => {
+          html += `
+            <div class="batch">
+              <div class="batch-header">
+                <h2 class="batch-title">Photos from ${contributor}</h2>
+                <div class="batch-meta">
+                  <span>${files.length} photo${files.length !== 1 ? 's' : ''}</span>
+                </div>
+              </div>
+              <div class="photo-grid">
+                ${files.map((file) => `
+                  <div class="photo-card" onclick="openLightbox('${file.key}', ${allPhotos.findIndex(p => p.key === file.key)})">
+                    <img src="" data-key="${file.key}" alt="${file.name}" loading="lazy">
+                    <div class="overlay">
+                      <p>${file.name}</p>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          `;
+        });
+      }
 
       document.getElementById('content').innerHTML = html;
       loadVisibleImages();
@@ -547,6 +585,29 @@
       loadVisibleImages();
     }
 
+    // Check if file is HEIC format
+    function isHeicFile(key) {
+      const lower = key.toLowerCase();
+      return lower.endsWith('.heic') || lower.endsWith('.heif');
+    }
+
+    // Convert HEIC blob to JPEG blob URL
+    async function convertHeicToJpeg(url) {
+      try {
+        const response = await fetch(url);
+        const blob = await response.blob();
+        const convertedBlob = await heic2any({
+          blob: blob,
+          toType: 'image/jpeg',
+          quality: 0.85
+        });
+        return URL.createObjectURL(convertedBlob);
+      } catch (err) {
+        console.error('HEIC conversion failed:', err);
+        return url; // Fall back to original URL
+      }
+    }
+
     // Load images lazily
     async function loadVisibleImages() {
       const images = document.querySelectorAll('.photo-card img[data-key]');
@@ -556,7 +617,15 @@
         try {
           const res = await fetch(`/api/gallery/image/${encodeURIComponent(key)}`);
           const data = await res.json();
-          img.src = data.url;
+
+          // Check if HEIC and convert if needed
+          if (isHeicFile(key)) {
+            img.alt = 'Converting...';
+            const jpegUrl = await convertHeicToJpeg(data.url);
+            img.src = jpegUrl;
+          } else {
+            img.src = data.url;
+          }
         } catch (err) {
           img.style.background = 'var(--bg-card)';
         }
@@ -579,7 +648,16 @@
       try {
         const res = await fetch(`/api/gallery/image/${encodeURIComponent(key)}`);
         const data = await res.json();
-        img.src = data.url;
+
+        // Check if HEIC and convert if needed
+        if (isHeicFile(key)) {
+          document.getElementById('lightboxInfo').textContent = 'Converting HEIC image...';
+          const jpegUrl = await convertHeicToJpeg(data.url);
+          img.src = jpegUrl;
+        } else {
+          img.src = data.url;
+        }
+
         img.style.opacity = '1';
 
         const photo = allPhotos[currentPhotoIndex];
