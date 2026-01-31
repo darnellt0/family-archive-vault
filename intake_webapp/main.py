@@ -649,8 +649,13 @@ async def api_upload_chunk(request: Request):
     except Exception:
         part_number = len(session["parts"]) + 1
 
-    body = await request.body()
-    print(f"[CHUNK] Uploading part {part_number}, {len(body)} bytes")
+    try:
+        body = await request.body()
+    except Exception as e:
+        print(f"[CHUNK ERROR] Failed to read request body: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to read chunk data: {str(e)}")
+
+    print(f"[CHUNK] Uploading part {part_number}, {len(body)} bytes for {session['object_key']}")
 
     try:
         s3 = get_r2_client()
@@ -705,7 +710,9 @@ async def api_upload_chunk(request: Request):
 
     except Exception as e:
         print(f"[CHUNK ERROR] {type(e).__name__}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Chunk upload failed: {str(e)}")
 
 
 @app.post("/api/upload/complete")
