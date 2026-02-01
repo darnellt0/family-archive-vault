@@ -45,7 +45,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-SCOPES = ["https://www.googleapis.com/auth/drive"]
+# Use drive.file scope for OAuth (creates/manages files this app created)
+# Service accounts can use full drive scope if needed
+SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 
 # MIME type mapping
 MIME_TYPES = {
