@@ -704,47 +704,66 @@
       }
     }
 
-    // Load a single image using pre-cached URL (no more API calls per image!)
+    // Load a single image using pre-cached URL with automatic retries
     async function loadImageWithRetry(img, key, retries = 3, delay = 1000, forceFresh = false) {
-      try {
-        // Get URL from pre-loaded data, or fetch fresh if needed
-        let url = forceFresh ? null : getUrlForKey(key);
+      for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+          // Get URL from pre-loaded data, or fetch fresh if needed
+          let url = (forceFresh || attempt > 1) ? null : getUrlForKey(key);
 
-        if (!url) {
-          // No cached URL - fetch a fresh one from API
-          console.log(`Fetching fresh URL for ${key}`);
-          img.alt = 'Loading...';
-          url = await fetchFreshUrl(key);
+          if (!url) {
+            // No cached URL or retry - fetch a fresh one from API
+            img.alt = attempt > 1 ? `Retry ${attempt}/${retries}...` : 'Loading...';
+            url = await fetchFreshUrl(key);
+          }
+
+          if (!url) {
+            if (attempt < retries) {
+              await new Promise(r => setTimeout(r, delay * attempt));
+              continue;
+            }
+            console.warn(`No URL available for ${key} after ${retries} attempts`);
+            img.classList.add('load-error');
+            img.setAttribute('data-failed', 'true');
+            img.alt = 'Loading...';
+            return false;
+          }
+
+          // Check if HEIC and convert if needed
+          if (isHeicFile(key)) {
+            img.alt = 'Converting...';
+            const jpegUrl = await convertHeicToJpeg(url);
+            img.src = jpegUrl;
+          } else {
+            // Use a promise to wait for actual image load
+            await new Promise((resolve, reject) => {
+              const tempImg = new Image();
+              tempImg.onload = () => {
+                img.src = url;
+                resolve();
+              };
+              tempImg.onerror = () => reject(new Error('Image failed to load'));
+              tempImg.src = url;
+            });
+          }
+
+          // Success - remove any error styling
+          img.classList.remove('load-error');
+          img.removeAttribute('data-failed');
+          return true;
+        } catch (err) {
+          console.warn(`Image load attempt ${attempt}/${retries} failed for ${key}:`, err.message);
+          if (attempt < retries) {
+            await new Promise(r => setTimeout(r, delay * attempt));
+          }
         }
-
-        if (!url) {
-          console.warn(`No URL available for ${key}`);
-          img.classList.add('load-error');
-          img.setAttribute('data-failed', 'true');
-          img.alt = 'Click to retry';
-          return false;
-        }
-
-        // Check if HEIC and convert if needed
-        if (isHeicFile(key)) {
-          img.alt = 'Converting...';
-          const jpegUrl = await convertHeicToJpeg(url);
-          img.src = jpegUrl;
-        } else {
-          img.src = url;
-        }
-
-        // Success - remove any error styling
-        img.classList.remove('load-error');
-        img.removeAttribute('data-failed');
-        return true;
-      } catch (err) {
-        console.warn(`Image load failed for ${key}:`, err.message);
-        img.classList.add('load-error');
-        img.setAttribute('data-failed', 'true');
-        img.alt = 'Click to retry';
-        return false;
       }
+
+      // All retries exhausted - mark for background retry
+      img.classList.add('load-error');
+      img.setAttribute('data-failed', 'true');
+      img.alt = 'Loading...';
+      return false;
     }
 
     // Load a video using pre-cached URL (no more API calls per video!)
@@ -796,18 +815,35 @@
       return loadVisibleMedia();
     }
 
-    // Click to retry failed images - fetch fresh URL from API
-    document.addEventListener('click', async (e) => {
-      const img = e.target.closest('.photo-card img[data-failed="true"]');
-      if (img) {
-        img.alt = 'Retrying...';
-        img.classList.remove('load-error');
-        img.removeAttribute('data-failed');
-        const key = img.dataset.key;
-        // Force fresh URL fetch on retry
-        await loadImageWithRetry(img, key, 2, 500, true);
+    // Background retry loop - automatically retry failed images every 5 seconds
+    let backgroundRetryRunning = false;
+    async function backgroundRetryLoop() {
+      if (backgroundRetryRunning) return;
+      backgroundRetryRunning = true;
+
+      while (true) {
+        await new Promise(r => setTimeout(r, 5000)); // Wait 5 seconds between retry cycles
+
+        const failedImages = document.querySelectorAll('.photo-card img[data-failed="true"]');
+        if (failedImages.length === 0) {
+          continue; // No failed images, keep checking
+        }
+
+        console.log(`Background retry: ${failedImages.length} images to retry`);
+
+        for (const img of failedImages) {
+          const key = img.dataset.key;
+          const success = await loadImageWithRetry(img, key, 2, 1000, true);
+          if (success) {
+            console.log(`Background retry succeeded for ${key}`);
+          }
+          await new Promise(r => setTimeout(r, 200)); // Small delay between retries
+        }
       }
-    });
+    }
+
+    // Start background retry loop
+    backgroundRetryLoop();
 
     // Lightbox functions
     async function openLightbox(key, index) {
