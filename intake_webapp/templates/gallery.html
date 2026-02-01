@@ -816,7 +816,22 @@
 
       try {
         const res = await fetch(`/api/gallery/image/${encodeURIComponent(key)}`);
+
+        if (!res.ok) {
+          console.error('API error:', res.status, res.statusText);
+          document.getElementById('lightboxInfo').textContent = `Error loading image (${res.status})`;
+          img.style.opacity = '1';
+          return;
+        }
+
         const data = await res.json();
+
+        if (!data.url) {
+          console.error('No URL in response:', data);
+          document.getElementById('lightboxInfo').textContent = 'Error: No image URL returned';
+          img.style.opacity = '1';
+          return;
+        }
 
         // Check if this is a video
         if (isVideoFile(key)) {
@@ -838,6 +853,12 @@
           } else {
             img.src = data.url;
           }
+
+          // Handle image load error
+          img.onerror = () => {
+            console.error('Image failed to load:', data.url);
+            document.getElementById('lightboxInfo').textContent = 'Error: Image failed to load';
+          };
         }
 
         img.style.opacity = '1';
@@ -849,6 +870,8 @@
         }
       } catch (err) {
         console.error('Failed to load media:', err);
+        document.getElementById('lightboxInfo').textContent = 'Error loading image';
+        img.style.opacity = '1';
       }
     }
 
