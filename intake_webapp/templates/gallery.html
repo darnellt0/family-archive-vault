@@ -573,7 +573,10 @@
             </div>
           </div>
           <div class="photo-grid">
-            ${batch.files.map((file, idx) => renderMediaCard(file, allPhotos.findIndex(p => p.key === file.key))).join('')}
+            ${batch.files.map((file) => {
+              const photoIndex = allPhotos.findIndex(p => p.key === file.key);
+              return renderMediaCard(file, photoIndex >= 0 ? photoIndex : 0);
+            }).join('')}
           </div>
         </div>
       `).join('');
@@ -598,7 +601,10 @@
                 </div>
               </div>
               <div class="photo-grid">
-                ${files.map((file) => renderMediaCard(file, allPhotos.findIndex(p => p.key === file.key))).join('')}
+                ${files.map((file) => {
+                  const photoIndex = allPhotos.findIndex(p => p.key === file.key);
+                  return renderMediaCard(file, photoIndex >= 0 ? photoIndex : 0);
+                }).join('')}
               </div>
             </div>
           `;
@@ -800,6 +806,13 @@
       img.style.opacity = '0.5';
       video.pause();
       video.src = '';
+
+      // Guard against undefined keys
+      if (!key) {
+        console.error('loadLightboxImage called with undefined key');
+        document.getElementById('lightboxInfo').textContent = 'Error: Image not found';
+        return;
+      }
 
       try {
         const res = await fetch(`/api/gallery/image/${encodeURIComponent(key)}`);
