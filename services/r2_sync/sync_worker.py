@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 
 from google.oauth2 import service_account
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseUpload
 
@@ -22,6 +24,9 @@ from .config import (
     R2_SYNC_TEMP_DIR,
     R2_EXCLUDE_PREFIXES,
     CONFIG_DIR,
+    GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET,
+    GOOGLE_REFRESH_TOKEN,
 )
 from .r2_client import get_r2_client, list_objects, download_object, delete_object
 from .db import (
@@ -63,33 +68,50 @@ MIME_TYPES = {
 def get_drive_service():
     """Get Google Drive API service.
 
-    Supports two modes:
-    1. SERVICE_ACCOUNT_JSON env var: JSON content (for Railway/cloud)
-    2. SERVICE_ACCOUNT_JSON_PATH: Path to file (for local)
+    Supports three modes (in priority order):
+    1. OAuth with refresh token (personal Google Drive - recommended)
+    2. SERVICE_ACCOUNT_JSON env var: JSON content (for Railway/cloud)
+    3. SERVICE_ACCOUNT_JSON_PATH: Path to file (for local)
     """
     import json
 
+    # Priority 1: OAuth with refresh token (for personal Google Drive)
+    if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET and GOOGLE_REFRESH_TOKEN:
+        creds = Credentials(
+            token=None,
+            refresh_token=GOOGLE_REFRESH_TOKEN,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=GOOGLE_CLIENT_ID,
+            client_secret=GOOGLE_CLIENT_SECRET,
+            scopes=SCOPES,
+        )
+        # Refresh to get a valid access token
+        creds.refresh(Request())
+        logger.info("Using OAuth credentials with refresh token")
+        return build("drive", "v3", credentials=creds)
+
+    # Priority 2: Service account JSON from environment
     if SERVICE_ACCOUNT_JSON:
-        # Load from environment variable (Railway deployment)
         try:
             info = json.loads(SERVICE_ACCOUNT_JSON)
             creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
             logger.info("Using service account from SERVICE_ACCOUNT_JSON env var")
         except json.JSONDecodeError as e:
             raise RuntimeError(f"Invalid SERVICE_ACCOUNT_JSON: {e}")
-    elif SERVICE_ACCOUNT_FILE.exists():
-        # Load from file (local development)
+        return build("drive", "v3", credentials=creds)
+
+    # Priority 3: Service account from file (local development)
+    if SERVICE_ACCOUNT_FILE.exists():
         creds = service_account.Credentials.from_service_account_file(
             str(SERVICE_ACCOUNT_FILE), scopes=SCOPES
         )
         logger.info(f"Using service account from file: {SERVICE_ACCOUNT_FILE}")
-    else:
-        raise RuntimeError(
-            "No service account credentials found. Set SERVICE_ACCOUNT_JSON env var "
-            f"or provide file at {SERVICE_ACCOUNT_FILE}"
-        )
+        return build("drive", "v3", credentials=creds)
 
-    return build("drive", "v3", credentials=creds)
+    raise RuntimeError(
+        "No Google credentials found. Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and "
+        "GOOGLE_REFRESH_TOKEN for OAuth, or SERVICE_ACCOUNT_JSON for service account."
+    )
 
 
 def load_drive_schema(service) -> Dict[str, str]:

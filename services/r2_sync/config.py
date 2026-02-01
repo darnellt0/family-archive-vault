@@ -14,12 +14,18 @@ R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY")
 R2_BUCKET_NAME = os.getenv("R2_BUCKET_NAME", "family-archive-uploads")
 
 # Google Drive Configuration
-# Supports two modes:
-# 1. SERVICE_ACCOUNT_JSON_PATH: Path to service account JSON file (local)
-# 2. SERVICE_ACCOUNT_JSON: JSON content as string (Railway/cloud deployments)
+# Supports three modes:
+# 1. OAuth with refresh token (personal Google Drive - recommended)
+# 2. SERVICE_ACCOUNT_JSON_PATH: Path to service account JSON file (local)
+# 3. SERVICE_ACCOUNT_JSON: JSON content as string (Railway/cloud deployments)
 SERVICE_ACCOUNT_FILE = Path(os.getenv("SERVICE_ACCOUNT_JSON_PATH", str(CONFIG_DIR / "service-account.json")))
 SERVICE_ACCOUNT_JSON = os.getenv("SERVICE_ACCOUNT_JSON", "")  # JSON content for cloud deploy
 DRIVE_ROOT_FOLDER_ID = os.getenv("DRIVE_ROOT_FOLDER_ID")
+
+# OAuth credentials (for personal Google Drive)
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
+GOOGLE_REFRESH_TOKEN = os.getenv("GOOGLE_REFRESH_TOKEN", "")
 DRIVE_SCHEMA_CACHE = CONFIG_DIR / "drive_schema.json"
 
 # Sync Configuration
