@@ -485,6 +485,13 @@
           });
         });
 
+        // Sort ALL photos by upload timestamp (newest first) for proper ordering
+        allPhotos.sort((a, b) => {
+          const timeA = getUploadTimestamp(a.key);
+          const timeB = getUploadTimestamp(b.key);
+          return timeB.localeCompare(timeA); // Descending (newest first)
+        });
+
         renderView();
         setupDecadeFilters();
 
@@ -557,74 +564,58 @@
       }
     }
 
-    // Render batches view
+    // Render batches view - shows all photos sorted newest to oldest
     function renderBatchesView(batches) {
-      let html = batches.map(batch => `
+      // For "All Photos" view, show a single grid sorted by upload time (newest first)
+      // allPhotos is already sorted by upload timestamp
+      const html = `
         <div class="batch">
           <div class="batch-header">
-            <h2 class="batch-title">
-              ${batch.notes || batch.event || 'Family Photos'}
-              ${batch.decade ? ` - ${batch.decade}` : ''}
-            </h2>
+            <h2 class="batch-title">All Family Photos</h2>
             <div class="batch-meta">
-              <span>Shared by ${batch.contributor}</span>
-              <span>${formatDate(batch.date)}</span>
-              <span>${batch.file_count} photo${batch.file_count !== 1 ? 's' : ''}</span>
+              <span>${allPhotos.length} photo${allPhotos.length !== 1 ? 's' : ''}</span>
+              <span>Sorted newest to oldest</span>
             </div>
           </div>
           <div class="photo-grid">
-            ${batch.files.map((file) => {
-              const photoIndex = allPhotos.findIndex(p => p.key === file.key);
-              return renderMediaCard(file, photoIndex >= 0 ? photoIndex : 0);
-            }).join('')}
+            ${allPhotos.map((photo, idx) => renderMediaCard(photo, idx)).join('')}
           </div>
         </div>
-      `).join('');
-
-      // Also show orphaned files (uploaded but not in a finished batch)
-      if (orphanedFiles.length > 0 && !currentDecadeFilter) {
-        // Group orphaned files by contributor
-        const byContributor = {};
-        orphanedFiles.forEach(file => {
-          const contrib = file.contributor || 'Unknown';
-          if (!byContributor[contrib]) byContributor[contrib] = [];
-          byContributor[contrib].push(file);
-        });
-
-        Object.entries(byContributor).forEach(([contributor, files]) => {
-          html += `
-            <div class="batch">
-              <div class="batch-header">
-                <h2 class="batch-title">Photos from ${contributor}</h2>
-                <div class="batch-meta">
-                  <span>${files.length} photo${files.length !== 1 ? 's' : ''}</span>
-                </div>
-              </div>
-              <div class="photo-grid">
-                ${files.map((file) => {
-                  const photoIndex = allPhotos.findIndex(p => p.key === file.key);
-                  return renderMediaCard(file, photoIndex >= 0 ? photoIndex : 0);
-                }).join('')}
-              </div>
-            </div>
-          `;
-        });
-      }
+      `;
 
       document.getElementById('content').innerHTML = html;
       loadVisibleMedia();
     }
 
-    // Render recent uploads (flat grid)
+    // Extract timestamp from file key (format: 2026-02-01T21-52-54_filename.jpg)
+    function getUploadTimestamp(key) {
+      // Key format: Memorial_Guest_UPLOADS/2026-02-01T21-52-54_filename.jpg
+      const filename = key.split('/').pop();
+      const match = filename.match(/^(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})/);
+      if (match) {
+        // Convert 2026-02-01T21-52-54 to proper ISO format 2026-02-01T21:52:54
+        return match[1].replace(/-(\d{2})-(\d{2})$/, ':$1:$2');
+      }
+      return '1970-01-01T00:00:00'; // Fallback for files without timestamp
+    }
+
+    // Render recent uploads (flat grid) - sorted by actual upload time
     function renderRecentView() {
-      const recent = [...allPhotos].slice(0, 50); // Last 50 photos
+      // Sort all photos by upload timestamp (newest first)
+      const sortedPhotos = [...allPhotos].sort((a, b) => {
+        const timeA = getUploadTimestamp(a.key);
+        const timeB = getUploadTimestamp(b.key);
+        return timeB.localeCompare(timeA); // Descending order (newest first)
+      });
+
+      const recent = sortedPhotos.slice(0, 50); // Most recent 50 photos
 
       const html = `
         <div class="batch">
           <div class="batch-header">
             <h2 class="batch-title">Recent Uploads</h2>
             <div class="batch-meta">
-              <span>${recent.length} files</span>
+              <span>${recent.length} most recent files</span>
             </div>
           </div>
           <div class="photo-grid">
@@ -691,59 +682,85 @@
       }
     }
 
-    // Load a single image with retry logic
-    async function loadImageWithRetry(img, key, retries = 3, delay = 1000) {
-      for (let attempt = 1; attempt <= retries; attempt++) {
-        try {
-          const res = await fetch(`/api/gallery/image/${encodeURIComponent(key)}`);
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          const data = await res.json();
-
-          // Check if HEIC and convert if needed
-          if (isHeicFile(key)) {
-            img.alt = 'Converting...';
-            const jpegUrl = await convertHeicToJpeg(data.url);
-            img.src = jpegUrl;
-          } else {
-            img.src = data.url;
-          }
-
-          // Success - remove any error styling
-          img.classList.remove('load-error');
-          img.removeAttribute('data-failed');
-          return true;
-        } catch (err) {
-          console.warn(`Image load attempt ${attempt}/${retries} failed for ${key}:`, err.message);
-          if (attempt < retries) {
-            await new Promise(r => setTimeout(r, delay * attempt)); // Exponential backoff
-          }
-        }
-      }
-
-      // All retries failed - show placeholder
-      img.classList.add('load-error');
-      img.setAttribute('data-failed', 'true');
-      img.alt = 'Click to retry';
-      return false;
+    // Get URL for a file from allPhotos cache (URLs come pre-loaded from API)
+    function getUrlForKey(key) {
+      const photo = allPhotos.find(p => p.key === key);
+      return photo ? photo.url : null;
     }
 
-    // Load a video thumbnail
-    async function loadVideoWithRetry(video, key, retries = 3, delay = 1000) {
-      for (let attempt = 1; attempt <= retries; attempt++) {
-        try {
-          const res = await fetch(`/api/gallery/image/${encodeURIComponent(key)}`);
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          const data = await res.json();
-          video.src = data.url;
-          return true;
-        } catch (err) {
-          console.warn(`Video load attempt ${attempt}/${retries} failed for ${key}:`, err.message);
-          if (attempt < retries) {
-            await new Promise(r => setTimeout(r, delay * attempt));
-          }
-        }
+    // Fetch a fresh presigned URL from the API (used for retry)
+    async function fetchFreshUrl(key) {
+      try {
+        const res = await fetch(`/api/gallery/image/${encodeURIComponent(key)}`);
+        if (!res.ok) return null;
+        const data = await res.json();
+        // Update the cached URL in allPhotos
+        const photo = allPhotos.find(p => p.key === key);
+        if (photo) photo.url = data.url;
+        return data.url;
+      } catch (err) {
+        console.error('Failed to fetch fresh URL:', err);
+        return null;
       }
-      return false;
+    }
+
+    // Load a single image using pre-cached URL (no more API calls per image!)
+    async function loadImageWithRetry(img, key, retries = 3, delay = 1000, forceFresh = false) {
+      try {
+        // Get URL from pre-loaded data, or fetch fresh if needed
+        let url = forceFresh ? null : getUrlForKey(key);
+
+        if (!url) {
+          // No cached URL - fetch a fresh one from API
+          console.log(`Fetching fresh URL for ${key}`);
+          img.alt = 'Loading...';
+          url = await fetchFreshUrl(key);
+        }
+
+        if (!url) {
+          console.warn(`No URL available for ${key}`);
+          img.classList.add('load-error');
+          img.setAttribute('data-failed', 'true');
+          img.alt = 'Click to retry';
+          return false;
+        }
+
+        // Check if HEIC and convert if needed
+        if (isHeicFile(key)) {
+          img.alt = 'Converting...';
+          const jpegUrl = await convertHeicToJpeg(url);
+          img.src = jpegUrl;
+        } else {
+          img.src = url;
+        }
+
+        // Success - remove any error styling
+        img.classList.remove('load-error');
+        img.removeAttribute('data-failed');
+        return true;
+      } catch (err) {
+        console.warn(`Image load failed for ${key}:`, err.message);
+        img.classList.add('load-error');
+        img.setAttribute('data-failed', 'true');
+        img.alt = 'Click to retry';
+        return false;
+      }
+    }
+
+    // Load a video using pre-cached URL (no more API calls per video!)
+    async function loadVideoWithRetry(video, key, retries = 3, delay = 1000) {
+      try {
+        const url = getUrlForKey(key);
+        if (!url) {
+          console.warn(`No cached URL for video ${key}`);
+          return false;
+        }
+        video.src = url;
+        return true;
+      } catch (err) {
+        console.warn(`Video load failed for ${key}:`, err.message);
+        return false;
+      }
     }
 
     // Load media (images and videos) in batches to avoid overwhelming the server
@@ -779,13 +796,16 @@
       return loadVisibleMedia();
     }
 
-    // Click to retry failed images
+    // Click to retry failed images - fetch fresh URL from API
     document.addEventListener('click', async (e) => {
       const img = e.target.closest('.photo-card img[data-failed="true"]');
       if (img) {
         img.alt = 'Retrying...';
+        img.classList.remove('load-error');
+        img.removeAttribute('data-failed');
         const key = img.dataset.key;
-        await loadImageWithRetry(img, key, 2, 500);
+        // Force fresh URL fetch on retry
+        await loadImageWithRetry(img, key, 2, 500, true);
       }
     });
 
@@ -815,20 +835,18 @@
       }
 
       try {
-        const res = await fetch(`/api/gallery/image/${encodeURIComponent(key)}`);
+        // Get URL from pre-loaded data, or fetch fresh if not available
+        let url = getUrlForKey(key);
 
-        if (!res.ok) {
-          console.error('API error:', res.status, res.statusText);
-          document.getElementById('lightboxInfo').textContent = `Error loading image (${res.status})`;
-          img.style.opacity = '1';
-          return;
+        if (!url) {
+          console.log('No cached URL for:', key, '- fetching fresh');
+          document.getElementById('lightboxInfo').textContent = 'Loading...';
+          url = await fetchFreshUrl(key);
         }
 
-        const data = await res.json();
-
-        if (!data.url) {
-          console.error('No URL in response:', data);
-          document.getElementById('lightboxInfo').textContent = 'Error: No image URL returned';
+        if (!url) {
+          console.error('Could not get URL for:', key);
+          document.getElementById('lightboxInfo').textContent = 'Error: Could not load image';
           img.style.opacity = '1';
           return;
         }
@@ -838,7 +856,7 @@
           // Show video, hide image
           img.classList.add('hidden');
           video.classList.add('active');
-          video.src = data.url;
+          video.src = url;
           video.load();
         } else {
           // Show image, hide video
@@ -848,15 +866,15 @@
           // Check if HEIC and convert if needed
           if (isHeicFile(key)) {
             document.getElementById('lightboxInfo').textContent = 'Converting HEIC image...';
-            const jpegUrl = await convertHeicToJpeg(data.url);
+            const jpegUrl = await convertHeicToJpeg(url);
             img.src = jpegUrl;
           } else {
-            img.src = data.url;
+            img.src = url;
           }
 
           // Handle image load error
           img.onerror = () => {
-            console.error('Image failed to load:', data.url);
+            console.error('Image failed to load:', url);
             document.getElementById('lightboxInfo').textContent = 'Error: Image failed to load';
           };
         }
